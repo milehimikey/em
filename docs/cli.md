@@ -1300,7 +1300,9 @@ breaking: command.submit-order invariant INV-CHK-2 added
 
 `base` is `null` and `changes` is `[]` without `--base`; `field` is `null` for an element-level
 change. Refuses (exit 1, no document) when the working-tree model has errors, the file is not in
-a git repository, or the revision does not exist. `em ci init` wires `em api check --base` as a
+a git repository, or the revision does not exist. A storyline model (a root plus storyline
+files) is loaded whole on both sides: the base side reads the root and every storyline file it
+declares at `<rev>`, so the diff covers public elements declared in storyline files. `em ci init` wires `em api check --base` as a
 PR job (see [ci.md](ci.md)).
 
 ### `em api surface`

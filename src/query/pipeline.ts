@@ -16,7 +16,7 @@
 // instead of refusing, a behavior change from every sibling command with no upside once
 // layout's own cost is already zero. See this ticket's report for the full tradeoff.
 
-import { parse } from "../parser/parser.js";
+import { loadModelAstFromText, diskReader, SourceReader } from "../model/loadModel.js";
 import { normalize, NormalizedModel } from "../model/model.js";
 import { computeRefs, RefsResult } from "../model/refs.js";
 import { validate, Diagnostic } from "../model/validate.js";
@@ -35,11 +35,12 @@ export interface QueryCompileResult {
 /** Compile one `.em` source for query use: parse + normalize + refs + validate (grid-free, see
  *  header) + the ModelIndex every verb queries. `baseDir` is the `.em` file's own directory —
  *  same doc-resolution convention every other command uses (passed straight through to
- *  `buildModelIndex`'s slice-doc join). Throws `ParseError` on a syntax error, same as
+ *  `buildModelIndex`'s slice-doc join). Throws `ParseError` on a syntax error (or `ModelLoadError` on an unreadable storyline file), same as
  *  `pipeline.ts`'s `compile()` — callers (cli.ts's compileFile-style wrapper, the MCP tool)
  *  catch it the same way. */
-export function compileForQuery(source: string, baseDir: string): QueryCompileResult {
-  const ast = parse(source);
+export function compileForQuery(source: string, baseDir: string, read: SourceReader = diskReader(baseDir)): QueryCompileResult {
+  // GH #475: a storyline root loads its model files too (default: from `baseDir` on disk).
+  const { ast } = loadModelAstFromText(source, read, baseDir);
   const model = normalize(ast);
   const refs = computeRefs(model);
   const diagnostics = [...validate(model, EMPTY_GRID, refs), ...refs.diagnostics];

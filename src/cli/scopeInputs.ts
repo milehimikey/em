@@ -9,8 +9,9 @@
 // document; only export-shaped facts reach `src/system/*`.
 
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { dirname, relative, resolve } from "node:path";
-import { compile } from "../pipeline.js";
+import { dirname, posix as posixPath, relative, resolve } from "node:path";
+import { compile, compileModelText } from "../pipeline.js";
+import { ModelLoadError } from "../model/loadModel.js";
 import { ParseError } from "../parser/parser.js";
 import { buildExportDoc, ExportDoc } from "../emit/json.js";
 import { ScopeJsonFacts } from "../emit/scopeJson.js";
@@ -51,14 +52,27 @@ function collectConsumes(doc: ExportDoc): string[] {
 
 /** A model file's text as an export document: `.em` is compiled (validation errors tolerated -
  *  this reads shapes, not strictness), anything else is read as an `em export --json` document.
- *  `null` when it cannot be read at all. */
-export function docFromText(text: string, rel: string): ExportDoc | null {
+ *  `null` when it cannot be read at all. GH #475: with `readRepoFile` (repo-relative path -> text
+ *  at the same revision, or `null`), a storyline root's model files are read alongside it so the
+ *  document carries their slices; an unreadable storyline file makes the document `null`. */
+export function docFromText(text: string, rel: string, readRepoFile?: (repoRel: string) => string | null): ExportDoc | null {
   if (rel.toLowerCase().endsWith(".em")) {
     try {
-      const c = compile(text);
+      const c =
+        readRepoFile === undefined
+          ? compile(text)
+          : compileModelText(
+              text,
+              (r) => {
+                const t = readRepoFile(posixPath.join(posixPath.dirname(rel), r));
+                if (t === null) throw new Error(`cannot read ${r}`);
+                return t;
+              },
+              rel,
+            );
       return buildExportDoc(c.model, c.refs, c.diagnostics, text, rel).doc;
     } catch (e) {
-      if (e instanceof ParseError) return null;
+      if (e instanceof ParseError || e instanceof ModelLoadError) return null;
       throw e;
     }
   }
@@ -87,7 +101,7 @@ export function buildScopeModels(
     if (touchedRaw) {
       const baseRel = change.renames.get(h.rel) ?? h.rel;
       const text = readBase(baseRel);
-      const baseDoc = text === null ? null : docFromText(text, baseRel);
+      const baseDoc = text === null ? null : docFromText(text, baseRel, readBase);
       baseConsumes = baseDoc === null ? [] : collectConsumes(baseDoc);
       if (change.changed.has(h.rel) || change.changed.has(baseRel)) {
         const headSurface = surfaceOf(h.doc.model.slices, h.doc.model.types, h.doc.model.enums);

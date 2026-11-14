@@ -12,14 +12,14 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { EnumDecl, NormalizedModel, ScalarDecl, TypeDecl, normalizeName, resolvePublicType } from "../model/model.js";
 import { computeModelKey } from "../model/qualifiedRef.js";
 import { hasErrors, Diagnostic } from "../model/validate.js";
-import { compile, compileModelFile } from "../pipeline.js";
+import { compile, compileModelFile, compileModelText } from "../pipeline.js";
 import { ModelLoadError } from "../model/loadModel.js";
 import { ParseError } from "../parser/parser.js";
 import { buildApiContract, publicSurfaceOf, reachableEnumRefs, reachableScalarRefs, reachableTypeRefs } from "../emit/api.js";
 import { buildExportDoc, ElementExport, EnumExport, FieldExport, TypeExport } from "../emit/json.js";
 import { RefsResult } from "../model/refs.js";
 import { kebabSlug } from "../util/slug.js";
-import { GitRunner, realGit, resolveRevision } from "./diff-inputs.js";
+import { GitRunner, realGit, resolveRevision, gitSourceReader } from "./diff-inputs.js";
 
 /** `<modelDir>/contracts/<modelKey>.tsp` (R6), built from the model path as given. */
 export function contractPathFor(modelFile: string, modelKey: string): string {
@@ -391,9 +391,9 @@ export type ApiCheckOutcome =
  * GH #473: the HEAD side compiles through `compileModelFile` — the same storyline-aware loader
  * `em api generate` uses (root plus every storyline model file it declares, GH #421) — so a
  * public element declared in a storyline file is part of the surface instead of making the
- * contract stale forever. `--base` has no multi-file-at-revision loader (`resolveRevision` reads
- * one file at one rev); rather than silently diff a partial surface, a base revision that itself
- * declares storyline files is refused.
+ * contract stale forever. GH #475: the `--base` side loads the root at `base` plus every storyline
+ * file it declares, each read at that same revision (`gitSourceReader`), so both surfaces are
+ * whole.
  */
 export function runApiCheck(file: string, base: string | undefined, runGit: GitRunner = realGit): ApiCheckOutcome {
   if (!existsSync(file)) {
@@ -431,23 +431,15 @@ export function runApiCheck(file: string, base: string | undefined, runGit: GitR
     if (atBase.ok) {
       let baseCompiled;
       try {
-        baseCompiled = compile(atBase.content);
+        // GH #475: root at `base` plus every storyline model file it declares, each read at the
+        // same revision — the base surface carries the storyline files' public elements too.
+        baseCompiled = compileModelText(atBase.content, gitSourceReader(file, base, runGit), `${file}@${base}`);
       } catch (e) {
         if (e instanceof ParseError) {
           return { ok: false, message: `em api check: parse error in ${file}@${base} ${e.message}`, diagnostics: head.diagnostics };
         }
+        if (e instanceof ModelLoadError) return { ok: false, message: `em api check: ${e.message}`, diagnostics: head.diagnostics };
         throw e;
-      }
-      // GH #473: resolveRevision reads one file at one revision — there is no multi-file-at-
-      // revision loader yet. A base root that itself declares storyline files would silently
-      // diff a surface missing every element those files carry, so refuse loudly instead.
-      if ((baseCompiled.model.storylines ?? []).some((st) => st.file !== undefined)) {
-        return {
-          ok: false,
-          message:
-            "em api check: --base does not yet support storyline models (the base revision's storyline files cannot be loaded) — see GH #475",
-          diagnostics: head.diagnostics,
-        };
       }
       // Base-side validate errors (e.g. a pre-1.14 free-text public type) do not block the
       // structural diff — the diff reads shapes, not strictness.
