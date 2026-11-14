@@ -32,40 +32,35 @@ deliberately, and the decision is recorded in the model or its slice docs.* It s
 three specific points:
 
 1. **Ratifying a slice** — the sign-off, after review, that flips a slice doc's `status` from
-   `reviewed` to `ready-to-implement`: contracts and invariants are agreed, every open question is
+   `reviewed` to `ready-to-implement`: contracts and invariants are agreed, and every open question is
    resolved or explicitly deferred ([`em slice defer`](cli.md#em-slice-defer-file-slice-key-question) —
-   positional for a question already on the doc, `--from-issue` for one the room raised and the
-   walkthrough captured as an `issue "..."` note), and — since 1.15.0 — the sign-off names exactly
-   what it signed: `em slice ratify` records the commit (`ratifiedRef`) and body hash
-   (`ratifiedHash`) of the doc, and refuses a doc with uncommitted changes — so deferrals, which edit
-   the body, come before the sign-off. This is the second of the two per-slice human gates (the first
-   is the review session itself — the whole sequence is
-   [The slice lifecycle gates](#the-slice-lifecycle-gates) below), the handoff gate between
-   deciding and building, and it's
-   mechanically checkable: `em validate <model>.em --slice-ready <key>` verifies the doc,
-   status, and open-question state in one command ([cli.md](cli.md#--slice-ready-key-mil-87)).
-   `em slice ratify <model>.em <key> --by <name>` (MIL-165) makes the sign-off itself a
-   mechanical, one-edit act, recording *who* ratified it and *when* in `ratifiedBy:`/
-   `ratifiedOn:` frontmatter alongside the `status` flip
+   positional for a question already on the doc, `--from-issue` for one the room raised as an
+   `issue "..."` note). The sign-off names exactly what it signed: `em slice ratify` records the
+   commit (`ratifiedRef`), the body hash (`ratifiedHash`) and a hash per section (`ratifiedSections`),
+   and refuses a doc with uncommitted changes — so deferrals, which edit the body, come before it.
+   This is the second of the two per-slice human gates (the first is the review session; the whole
+   sequence is [The slice lifecycle gates](#the-slice-lifecycle-gates) below), the handoff gate
+   between deciding and building. It is mechanically checkable: `em validate <model>.em --slice-ready
+   <key>` verifies the doc, status and open-question state in one command
+   ([cli.md](cli.md#--slice-ready-key-mil-87)).
+   `em slice ratify <model>.em <key> --by <name>` (MIL-165) makes the sign-off one mechanical edit
+   that records *who* and *when* in `ratifiedBy:`/`ratifiedOn:` beside the `status` flip
    ([cli.md](cli.md#em-slice-ratify-file-slice-key---by-name)). `ratifiedBy:` is a *record* of who
    signed, not a permission: `--by` is free text and unauthenticated, and the authenticated approval is
    your git host's review of the pull request that carries the sign-off. Who may approve is the host's
    decision — a [CODEOWNERS](ci.md#codeowners-routing-ratification-review) rule on `slices/**` plus
    branch protection means the edit can't merge without review by a designated ratifier. (An optional
    [roster](policy.md#the-roster-is-optional) exists for teams with no host enforcement.)
-   **Revising** a slice that already shipped is the same act for a change: `em slice revise
-   <model>.em <key>` (MIL-283, [cli.md](cli.md#em-slice-revise-file-slice-key)) opens the next
-   version as a `draft` — `version:` bumped, the prior sign-off cleared, the shipped version kept
-   in the shipped record ([slice-doc-schema.md](slice-doc-schema.md#status-under-re-ratification))
-   — and `em slice mark-implemented` does it automatically at merge when a question was deferred
-   to the next version. (A reviewer reading `status: draft` on that slice's merge PR should look
-   at `shippedVersion:`/`implementedIn:` — that is the record of implementation; `status:` is the
-   next version's state. The command prints a notice saying so, and `em status` shows the slice as
-   `implemented (v<n>) · draft v<n+1> open`.) Record the hop in the `## Delta` section, then the new version takes both
-   gates again: review, then `em slice ratify --by <name>`. The same command revises a ratified
-   doc that **never shipped** (a gap answered mid-build): the ratification is withdrawn (`--withdraw`) and
-   the doc reopens as a draft at the **same** `version:` — a number moves only once that version has
-   shipped (GH #486), so no `## Delta` is owed.
+   **Changing a signed slice** takes one of three routes, by what changed
+   ([the four cases](#revision-re-enters-the-loop-at-the-top) below): `em slice amend` re-signs a
+   prose-only change in place; `em slice revise` reopens the doc as a `draft` for a behaviour change,
+   at the **same** `version:` while that version has not shipped (GH #486) and at v(N+1) once it
+   has — the prior sign-off cleared, the shipped version kept in the shipped record
+   ([slice-doc-schema.md](slice-doc-schema.md#status-under-re-ratification)). A reviewer reading
+   `status: draft` on a shipped slice's merge PR should look at `shippedVersion:`/`implementedIn:` —
+   that is the record of implementation; `status:` is the next version's state, and `em status` shows
+   `implemented (v<n>) · draft v<n+1> open`. `em slice mark-implemented` opens the next version
+   itself at merge when a question was deferred to it.
    **API first (MIL-238):** ratifying a *public-touching* slice — one that owns a `public`
    command, event or view — also asserts that the model's generated contract
    (`contracts/<model key>.tsp`, written by `em api generate`) is current, and says whether this
@@ -127,9 +122,12 @@ draft ──(review session)──▶ reviewed ──(ratification gate)──�
 3. **The ratification gate → `ready-to-implement`.** Human, per-slice, and *typically
    multi-person*: the ratifier plus whoever will own the build. `em slice ratify <model>.em <key>
    --by <name>` ([cli.md](cli.md#em-slice-ratify-file-slice-key---by-name)) makes the sign-off one
-   mechanical edit recording `ratifiedBy:`/`ratifiedOn:`, and it **refuses a doc that never passed
-   through `reviewed`** unless `--skip-review` is passed (which prints a loud notice on stderr and
-   writes nothing about the skip into the doc). The "multi-person" part is routed by the platform,
+   mechanical edit recording `ratifiedBy:`/`ratifiedOn:`, and by default it **refuses a doc that never passed
+   through `reviewed`** unless `--skip-review` is passed (a loud notice on stderr, and a
+   `reviewSkipped:` line on the doc so the bypass stays visible). A team that reviews slice docs in
+   the pull request can declare `review: pull-request` in [`em-policy.yaml`](policy.md): ratify
+   then accepts a `draft`, applies the review gate's Open Questions check, and records the review
+   (`reviewedBy:`/`reviewedOn:`) with the sign-off, with no `reviewSkipped:` marker. The "multi-person" part is routed by the platform,
    not by `em`: the git host decides who may approve. Put a [CODEOWNERS](ci.md#codeowners-routing-ratification-review) rule on
    `slices/**` naming your ratifiers, so the edit itself can't merge without their review.
    Confirm readiness mechanically with `em validate <model>.em --slice-ready <key>`.
@@ -153,52 +151,74 @@ skips all four statuses and both gates above: it inherits the originating slice'
 wholesale, since it isn't a spec unit to review, ratify, or mark implemented separately. See
 [slice-doc-schema.md](slice-doc-schema.md#continuations).
 
-**Revision re-enters the loop at the top** (MIL-283; a ratified doc that never shipped keeps its `version:`, GH #486): `em slice revise <model>.em <key>`
-([cli.md](cli.md#em-slice-revise-file-slice-key)) opens the next version as a **`draft`** — `version:`
-bumped, the old sign-off and the old review record cleared (neither describes the new version),
-the shipped version kept in the shipped record so every reader still sees it in production. The
-new version then passes the same two gates v1 did: a review session (`em slice review --by`) and
-the ratification (`em slice ratify --by`, which signs a fresh `ratifiedRef`). Until 1.14 the bump
-left the doc at an unsigned `ready-to-implement` that the ratification gate accepted without a
-fresh review; that carve-out is gone — a v2 is a new spec, and "the room understood this slice"
-has to be true of *this* version too.
+### Revision re-enters the loop at the top
+
+A change to a signed slice takes one of four routes, by what changed and whether the version has
+shipped. The cost follows the size of the change; no route removes a human sign-off, and an agent
+runs none of them on its own authority.
+
+| What changed | Command | Version | Gates |
+|---|---|---|---|
+| Prose only: intent, trigger and actor, dependencies, consumed-by (the [default list](policy.md), settable per project) | `em slice amend <model>.em <key> --by <name>` | unchanged | one sign-off by the amender; review record kept, slice stays `--slice-ready` |
+| Behaviour, version **not yet shipped** (a gap found mid-build) | `em slice revise <model>.em <key> --withdraw` | unchanged: a number moves only once that version has shipped (GH #486) | review, then ratify, as for any draft |
+| Behaviour, version **shipped** | `em slice revise <model>.em <key>` | v(N+1), the shipped version kept in the shipped record | review, then ratify, then a build of the delta |
+| The model only (a contract moved, or em writes the generated regions differently) | `em slice sync <model>.em` | unchanged | none: the signature covers authored text |
+
+**Amend.** `em slice amend` ([cli.md](cli.md#em-slice-amend-file-slice-key---by-name)) re-signs a
+prose-only change in place: it re-stamps `ratifiedHash:`/`ratifiedSections:` and records
+`amendedBy:`/`amendedOn:`. It refuses, writing nothing, when any changed section is behaviour
+(an unknown heading counts as behaviour); that change goes through `revise`. `--by` names a human,
+exactly as for ratify. For a slice that has not shipped, the amendment travels in the implementation
+PR that found the gap, so the reviewer of the code reads and approves the new wording in the same
+review; for a shipped slice it is a small doc-only PR.
+
+**Revise.** `em slice revise` ([cli.md](cli.md#em-slice-revise-file-slice-key)) reopens the doc as
+a **`draft`**: the old sign-off and review record are cleared (neither describes the new text), and
+the shipped version, if any, stays in the shipped record so every reader still sees it in
+production. The doc then takes the same two gates v1 did: `em slice review --by`, then
+`em slice ratify --by`, which signs a fresh `ratifiedRef`. A revision is a new spec, so "the room
+understood this slice" has to be true of the revised text too. For a shipped slice, record the hop
+in the `## Delta` section; a never-shipped version owes no delta, since there is nothing shipped to
+be a delta of. `--keep-version` is a no-op: not bumping is already the default.
 
 **A question found mid-build on a ratified doc is deferred into the doc, outside the hash** (GH
 #253). A ratified doc's body is what was signed (`ratifiedHash`), so adding a `- [ ]` under
 `## Open Questions` by hand breaks `--slice-ready` and makes `ratify` refuse the changed body, and
-`revise` would withdraw the only implementable version. But a *deferral* describes a later version,
-not the one that was signed, so the hash leaves the `## Open Questions` heading and its `deferred
-to v<n>` items out: `em slice defer <model>.em <key> "<question>" --until v<n> --decision "…"` on a
-ratified (or shipped) doc appends the already-deferred `- [x]` item to the doc — the hash stays
-valid, the build goes on, and anyone reading the ratified doc (an implementer, a reviewer, the
+`revise --withdraw` would withdraw the only implementable version. But a *deferral* describes a
+later version, not the one that was signed, so the hash leaves the `## Open Questions` heading and
+its `deferred to v<n>` items out: `em slice defer <model>.em <key> "<question>" --until v<n>
+--decision "…"` on a ratified (or shipped) doc appends the already-deferred `- [x]` item — the hash
+stays valid, the build goes on, and anyone reading the doc (an implementer, a reviewer, the
 readiness gate) sees what has already been raised against it. `em status` and `em export` show how
-much work waits on later versions. When v<n> opens — `mark-implemented` at merge does it
-automatically, `revise` by hand — the item is reopened as `- [ ]` in the new draft. On a
-`draft`/`reviewed` doc defer rewrites the existing `- [ ]` as before. `em slice revise` on a
-ratified doc that never shipped refuses unless you pass `--withdraw`: that is for changing the spec
-itself, not for recording a question. (1.16.0 queued such questions in `.event-modeling.md` instead,
-GH #236; anything still queued there is injected when the next draft opens, and `em upgrade` moves
-it into the doc.)
+much work waits on later versions. When v<n> opens, the item is reopened as `- [ ]` in the new
+draft: `mark-implemented` does it at merge, and `revise` on a shipped doc does it by hand. A
+`revise --withdraw` on a never-shipped doc keeps the version number, so a question deferred to
+v(N+1) stays deferred through it and reopens when v(N) ships. On a `draft`/`reviewed` doc defer
+rewrites the existing `- [ ]`. `em slice revise` on a ratified, never-shipped doc refuses unless
+you pass `--withdraw`: that is for changing the spec itself, not for recording a question. (1.16.0
+queued such questions in `.event-modeling.md` instead, GH #236; anything still queued there is
+injected when the next draft opens, and `em upgrade` moves it into the doc.)
 
 **A model change reaches a ratified doc through `em slice sync`, not a re-ratification** (GH #347,
 1.19.0). The signature covers what the ratifier wrote: `ratifiedHash` leaves out the text between
 each generated region's markers, which only restates the model. So when the model changes (or a
 new em version writes the regions differently), run `em slice sync <model>.em`: it rewrites the
-regions of ratified and shipped docs too, keeps `ratifiedHash` and `ratifiedRef`, and says so
-(a hash still in the 1.17–1.18 or pre-1.17 scope is re-stamped in the current scope in the same
-write — same authored text, not a re-signing). Model-change discipline lives in the model's own
-pin: the slice-ready gate requires the slice's model version (`model-versions/v<N>.json`,
-`modelHash`) to be current, so a contract change is still a decision someone records. Changing the
-*authored* text — a scenario, an invariant elaboration, the intent — is still a new version:
-`em slice revise`, review, `em slice ratify`. A scenario stub sync writes into a signed doc's region
-is reported by `em validate` (`slice-doc/generated-region-placeholder`) until the scenario is written
-in `## Scenarios` in the next version — the sync that follows retires the covered stub (GH #368) —
-or the model gap behind a `{{ }}` cell is filled.
+regions of ratified and shipped docs too, keeps `ratifiedHash` and `ratifiedRef`, and says so.
+Model-change discipline lives in the model's own pin: the slice-ready gate requires the slice's
+model version (`model-versions/v<N>.json`, `modelHash`) to be current, so a contract change is still
+a decision someone records. Changing the *authored* text is `amend` (prose) or `revise` (behaviour).
+A scenario stub sync writes into a signed doc's region is reported by `em validate`
+(`slice-doc/generated-region-placeholder`) until the scenario is written in `## Scenarios` in the
+next version — the sync that follows retires the covered stub (GH #368) — or the model gap behind a
+`{{ }}` cell is filled.
 
 Why two gates and not one: "the room understood this slice" and "we commit to building this
 slice" are different decisions, made by different people, often days apart. Collapsing them means
 whoever facilitated the review also authorized the build — which is exactly the failure the
-one rule at the top of this document exists to prevent.
+one rule at the top of this document exists to prevent. A team that already reviews slice
+docs in the pull request may declare that review to be the review session (`review: pull-request`
+in [`em-policy.yaml`](policy.md)); the two sign-offs are still recorded, and the ratifier is still
+a named human.
 
 ## Inline ratification: approval as the ratification session
 
@@ -218,19 +238,21 @@ new mode of any of them:
 1. Draft the slice doc and the implementation on one branch, doc commits first (same discipline as
    always: don't write code before the thing it implements is specified).
 2. Open the PR. **The human's review of that PR is the ratification session.** They read the doc,
-   decide it's right, and the act of approving records it: run `em slice ratify --no-ref <model>.em
-   <key> --by <name>` (`--no-ref` because this branch is headed for a squash or rebase merge —
-   see [cli.md](cli.md#em-slice-ratify-file-slice-key---by-name) — `ratifiedHash:` alone still
-   verifies the exact body that was signed) as part of approving, or have a bot/check stamp it the
+   decide it's right, and the act of approving records it: run `em slice ratify <model>.em
+   <key> --by <name>` as part of approving (on a branch headed for a squash or rebase merge, declare
+   `merge: squash` or `merge: rebase` once in [`em-policy.yaml`](policy.md) and ratify records the
+   hash only; `--no-ref` does the same per run — see
+   [cli.md](cli.md#em-slice-ratify-file-slice-key---by-name). `ratifiedHash:` alone still
+   verifies the exact body that was signed), or have a bot/check stamp it the
    moment the approval lands. Either way, the ratifying edit is itself part of the PR, under the
    same review.
 3. Merge. `em slice mark-implemented` runs at merge exactly as it always has (§"The slice
    lifecycle gates" above, point 4).
-4. **Any doc edit after the sign-off trips the existing hash check and forces re-review** — inline
-   mode adds no new guardrail here because it needs none: `ratifiedHash` (MIL-284) already covers
-   exactly this. If conform or review surfaces a gap mid-build, the implement →
-   conform → adjust → re-sign loop (`em slice revise --withdraw`, re-ratify) works the same inline
-   as it does across two PRs. Running [`em slice conform <model>.em <key> --at <rev> --preview`](cli.md#em-slice-conform---preview-gh-400)
+4. **Any doc edit after the sign-off trips the existing hash check** — inline mode adds no new
+   guardrail here because it needs none: `ratifiedHash` (MIL-284) already covers exactly this. If
+   conform or review surfaces a gap mid-build, the loop is the same inline as across two PRs: a
+   prose gap is re-signed in place by the human with `em slice amend --by <name>`, in this PR; a
+   behaviour gap goes through `em slice revise --withdraw` and a second review and ratify. Running [`em slice conform <model>.em <key> --at <rev> --preview`](cli.md#em-slice-conform---preview-gh-400)
    before the PR merges — the pre-ship advisory conform, waiving the shipped-status precondition —
    is the inline loop's natural "did I drift from the doc I just signed" check: ephemeral by
    default, never writes `conformedVersion`/`conformedAt`/`conformedOn`, and never blocks the
@@ -281,7 +303,9 @@ in the branch's history the doc was actually decided.
 `em refs --check-order` (GH #399, see [cli.md](cli.md#--check-order-gh-399-the-inline-ratification-ordering-advisory))
 is a mechanical smoke-check for exactly that: for every slice doc carrying a `ratifiedRef:`, it
 walks the branch's commits up to the ratification point looking for a commit that already touched
-code before the doc was signed. **It is advisory, never a validate gate, and it never affects the
+code before the doc was signed. (The other PR-time check, `em inline-check`, is described under the
+risk tiers above: it asks *whether* a slice was ratified inline against policy, this one asks *in what
+order*.) **It is advisory, never a validate gate, and it never affects the
 exit code** — commit history is rewritable (a rebase can make any ordering look clean after the
 fact), so this can only ever be a signal for the human already reviewing the PR, the same person
 who is about to run `ratify` themselves. No em command gates on it, and none ever will under this
@@ -520,8 +544,9 @@ for the human doing the handing:
 1. Ratify the slice — `em slice ratify <model>.em <key> --by <name>` (status →
    `ready-to-implement`, records who/when), open questions resolved — and confirm:
    `em validate <model>.em --slice-ready <key>` exits 0. Ratification comes *after* the review
-   gate (`em slice review`, status → `reviewed`); `ratify` refuses a doc that skipped it unless
-   you pass `--skip-review`. See [The slice lifecycle gates](#the-slice-lifecycle-gates). For a
+   gate (`em slice review`, status → `reviewed`). By default `ratify` refuses a doc that skipped
+   it unless you pass `--skip-review`; under `review: pull-request` in `em-policy.yaml` it accepts
+   a draft and records the review with the sign-off. See [The slice lifecycle gates](#the-slice-lifecycle-gates). For a
    public-touching slice, run `em api generate <model>.em` first and add `--meaning-unchanged`
    or `--contract-change "<why>"` to the ratify call (see
    [Seams between models](#seams-between-models-who-does-what)).
@@ -534,7 +559,8 @@ for the human doing the handing:
    exits 0. A slice that ships without one gets it backfilled by its first scoped conform walk
    (bindings.md's "Who writes this file").
 4. Review the PR like any other — plus two model-side checks: the slice doc's only edits are
-   the merge-time `status`/`implementedIn` flip, and no new spec-shaped artifacts got
+   the merge-time `status`/`implementedIn` flip and, where a human found a prose gap, an
+   `em slice amend` they signed (`amendedBy:`), and no new spec-shaped artifacts got
    committed as sources of truth.
 5. The implementing agent stays on its side of the seam: it never edits another model's
    directory, slice docs or contract file. A change it needs from a producer goes back to the
@@ -573,8 +599,8 @@ them through em's four sub-agents. The roles do not change; they are named here.
   `em engagement set`, and never writes slice code itself. Its follow-up branches are named
   `engagement/<slug>-level-<n>`.
 - **The ratifier is not the operator.** Whoever ratified a slice still did not run its build;
-  the lead never ratifies, never edits a ratified doc beyond the merge-time flip, and never
-  merges.
+  the lead never ratifies or amends, never edits a ratified doc beyond the merge-time flip, and
+  never merges.
 - **The human merges, in any order, with the project's own strategy.** The lead hands over each
   PR at `awaiting-merge`. Every slice PR is cut from and targets `main` (the agent guide's §8
   rule 2) — an engagement groups related slices, it never stacks them — so no PR depends on

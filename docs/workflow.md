@@ -96,8 +96,9 @@ Each step has an owner and a command. `draft` is where `em slice new` puts a doc
 `implemented` also records where — `implementedIn`, a PR or commit link. That link looks like
 bookkeeping and isn't: it's what stage 6 uses to know which slices are worth checking against
 code, and what a future reader follows to find out how a business rule was actually built.
-The frontmatter also carries `version:`, which bumps when a change to an already-shipped
-slice is ratified — recorded in the doc's `## Delta` section as typed operation blocks — and
+The frontmatter also carries `version:`, which bumps only when a shipped slice is revised
+(`em slice revise` opens v(N+1) as a draft) — the change is recorded in the doc's `## Delta`
+section as typed operation blocks; a version that has not shipped keeps its number — and
 lineage keys (`split-from`/`merged-from`/`superseded-by`) when a slice splits, merges, or is
 renamed, so its history survives the reshuffle.
 
@@ -135,8 +136,11 @@ where a person's name goes on the record ([process.md](process.md#the-slice-life
 2. **Ratification.** Human, per-slice, usually more than one person — route it through a
    [CODEOWNERS](ci.md#codeowners-routing-ratification-review) rule on `slices/**`.
    `em slice ratify` flips the doc to `ready-to-implement` and records
-   `ratifiedBy`/`ratifiedOn`, and it **refuses a doc that never passed through `reviewed`**
-   unless you pass `--skip-review`, which prints a loud notice so the skip is visible in history.
+   `ratifiedBy`/`ratifiedOn`, and by default it **refuses a doc that never passed through
+   `reviewed`** unless you pass `--skip-review`, which prints a loud notice and writes
+   `reviewSkipped:` so the skip is visible in history. A team that reviews slice docs in the pull
+   request declares `review: pull-request` in [`em-policy.yaml`](policy.md); ratify then accepts a
+   draft and records the review with the sign-off, no skip marker.
 
 ```bash
 em slice review model.em <key> --by "Alex Rivera"   # review done: status reviewed, reviewedBy/reviewedOn
@@ -145,6 +149,14 @@ em validate model.em --slice-ready <key>            # exits non-zero until the s
 ```
 
 Only then does the slice go out.
+
+If a signed doc has to change later, the size of the change picks the route
+([process.md](process.md#revision-re-enters-the-loop-at-the-top)). A **prose-only** change
+(intent, trigger and actor, dependencies, consumed-by) is re-signed in place by a human with
+`em slice amend model.em <key> --by "Sam Okafor"`: same version, review kept, still
+`--slice-ready`; for a slice not yet shipped it travels in the implementation PR that found the gap.
+A **behaviour** change refuses `amend` and goes back through `em slice revise` and both gates: at
+the same `version:` if it has not shipped, at v(N+1) if it has.
 
 Time the ratification as the handoff gate it is: hold slices at `reviewed` while a storyline is
 still being shaped (a `reviewed` doc is free to edit, and `em slice review --again` re-records
@@ -363,7 +375,9 @@ and treat a finding as the start of a conversation.
 | Open `issue` clauses | only with `--fail-on-issues` (opt-in) | warning by default |
 | Fields completeness | — | warnings |
 | Slice readiness at handoff | `em validate --slice-ready <key>` exits non-zero (opt-in, per slice) | — |
-| Ratifying a slice that was never reviewed | `em slice ratify` exits non-zero (`--skip-review` bypasses, with a notice on stderr) | — |
+| Ratifying a slice that was never reviewed | `em slice ratify` exits non-zero by default (`--skip-review` bypasses, with a notice on stderr and a `reviewSkipped:` marker); under `review: pull-request` in `em-policy.yaml` ratify records the review instead and does not refuse | — |
+| Amending a signed slice doc in place | `em slice amend` exits non-zero, writing nothing, when a behaviour section changed (only prose sections — Intent, Trigger & Actor, Dependencies & Read Models Affected, Consumed by, or the project's `amendment.prose-sections` — are re-signed) | — |
+| A slice ratified inline (same change set as implementation code) against policy | `em inline-check --base <rev>` exits non-zero only when `ratification.inline-violation: error` | warning by default (`ratification.inline` picks which slices) |
 | Model changed at all | only with `em diff --exit-code` | — |
 | Slice-doc `version:` ↔ content agreement (a shipped version's content changes only with a bump or a recorded `em slice amend`; edits before ship are free) | `em ledger` exits non-zero (opt-in, needs git history; a formatting-only finding can be explicitly waived — `--waive` or an `Em-Ledger-Waive:` commit trailer, see [ci.md](ci.md#em-ledger-opt-in)) | — |
 | Strict types on `public` fields | `em validate` exits non-zero (`public-field-type-unresolved`) | — |

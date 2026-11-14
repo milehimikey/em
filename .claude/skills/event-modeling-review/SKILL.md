@@ -91,7 +91,8 @@ about to be dispatched for building.
 review session. Ratification is a separate human gate after review**
 (docs/process.md#the-slice-lifecycle-gates). It is typically multi-person, routed through
 CODEOWNERS on `slices/**`, and it is not this session's to run — `em slice ratify` will itself
-refuse a doc that hasn't been through `em slice review`.
+refuse a doc that hasn't been through `em slice review` (a project can declare the pull-request
+review as the review session in `em-policy.yaml`; the facilitator still never runs ratify).
 
 End of phase: state file's `Last stakeholder review:` marker updated, every walked slice whose
 questions all closed moved to `status: reviewed`, every issue captured live triaged (resolved on the spot, moved to Open questions / parking lot, or left open on

@@ -1295,10 +1295,11 @@ slice
       "that makes who ratified, and when, a first-class recorded fact. The review gate is a check " +
       "on the doc's current `status:`, not on whether `reviewedBy:`/`reviewedOn:` are populated: " +
       "a doc at `reviewed` passes; a `ready-to-implement` doc only when the same signer is " +
-      "completing their own record (since 1.15.0, MIL-283 — a new sign-off is a new version: " +
-      "`em slice revise`); any other status " +
+      "completing their own record (a changed spec is reopened with " +
+      "`em slice revise`, a prose-only change re-signed with `em slice amend`); any other status " +
       "— a `draft` that never went through `em slice review` — is refused unless --skip-review " +
-      "is passed. Idempotent on " +
+      "is passed, or `review: pull-request` is declared in em-policy.yaml (GH #494), which records the review " +
+      "with the sign-off instead. Idempotent on " +
       "the same --by/--on pair; refuses to overwrite a different one already recorded, and (MIL-284) a " +
       "same-pair re-run on a doc whose body moved after sign-off; never " +
       "touches `version:` or the doc body. Inside a git work tree also records `ratifiedRef:` (HEAD, " +
@@ -1450,7 +1451,7 @@ slice
   .requiredOption("--by <name>", "the amender's name (a human, as for ratify)")
   .option("--on <date>", "amendment date, YYYY-MM-DD (default: today, local date)")
   .option("--no-ref", "record ratifiedHash: only, no ratifiedRef: (as `em slice ratify --no-ref`, GH #255); a stale ratifiedRef: is dropped")
-  .option("--roster <path>", "optional ratifier roster to check --by against (default: the nearest ratifiers.yaml above the model, none = no check, the git host decides who may approve)")
+  .option("--roster <path>", "optional ratifier roster to check --by against (default: the nearest em-policy.yaml with a roster above the model, else a legacy ratifiers.yaml; none = no check, the git host decides who may approve)")
   .action((file: string, sliceKey: string, opts: { by: string; on?: string; ref?: boolean; roster?: string }) => {
     // GH #493: the policy's merge setting applies to an amendment as it does to ratify, and an invalid
     // em-policy.yaml refuses the write (the prose list would otherwise fall back to the default).

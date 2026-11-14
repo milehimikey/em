@@ -221,6 +221,13 @@ For each slice:
    first. **Pre-release** (the model's `modelVersion` entry has `design: null` and
    `slices.byStatus.shipped === 0`): never run `em slice revise`; a ratified doc holds a
    human sign-off, so STOP, park the change as an open question, and let the ratifier decide.
+   **A prose-only change to a signed doc is an amendment, not a revision.** If the change
+   touches only Intent, Trigger & Actor, Dependencies & Read Models Affected or Consumed by
+   (the project's `em-policy.yaml` can change that list), draft the proposed wording and hand it
+   to the human: they edit the doc and run `em slice amend <model>.em <slice-key> --by <their
+   name>`, which re-signs it in place — same version, review kept, no new gates. You never run
+   `amend`, for the same reason you never run `ratify`; it refuses a behaviour section, and when
+   you are unsure whether a change is prose, treat it as behaviour.
    **Released** (either condition false): a doc with `status: implemented` is a
    re-ratification, not fresh authoring: hold a Socratic
    deep-dive on what changed (same rigor as step 1, scoped to the delta), update whichever
@@ -228,9 +235,10 @@ For each slice:
    `### Added`/`Modified`/`Removed`/`Renamed` Requirement blocks each carrying its own scenarios
    (see `${CLAUDE_PLUGIN_ROOT}/shared/templates/slice.md` and
    `${CLAUDE_PLUGIN_ROOT}/shared/reference/slice-doc-schema.md#delta-section-grammar-and-lifecycle`)
-   — **overwriting** whatever the section held before, never appending to it. Then continue at
-   step 2 to bump `version` (this is a shipped doc: the number moves because v<N> shipped) and
-   flip `status` back to `ready-to-implement`, leaving
+   — **overwriting** whatever the section held before, never appending to it. Then
+   `em slice revise` (below) opens the next version as a draft and moves `version` (this is a
+   shipped doc: the number moves because v<N> shipped); the new version is reviewed and ratified
+   before it is `ready-to-implement` again, with
    `implementedIn` naming the prior version's PR (intended drift signal, not a bug — see the
    schema doc). Otherwise, this is first-time authoring: continue at step 1.
 1. Hold a Socratic deep-dive to fill every section of `${CLAUDE_PLUGIN_ROOT}/shared/templates/slice.md`:
@@ -316,14 +324,14 @@ For each slice:
    lineage key(s) by hand (`split-from`/`merged-from`/`superseded-by`, `<slice-key>@v<N>` grammar
    — see `${CLAUDE_PLUGIN_ROOT}/shared/reference/slice-doc-schema.md` for the full schema; `em validate` catches a malformed one
    after the fact, see the `lineage-*` rules below).
-   **Revision (step 0) — released models only.** Confirm the model is released first
+   **Revision (step 0) — behaviour changes, released models only.** Confirm the model is released first
    (`em status <model>.em --json`: the `modelVersion` entry's `design` is not `null`, or
    `slices.byStatus.shipped > 0`); on a pre-release model never run `revise`. The doc
    already exists, so `em slice new` doesn't apply here
    (it refuses to overwrite an existing file without `--force`, and forcing would blow away the
    doc's authored body) — run `em slice revise <model>.em <slice-key>` instead (MIL-283): it
    opens the next version as a **`draft`** in the existing frontmatter — `version` bumped
-   (a shipped doc only),
+   (a shipped doc only: a version number moves once that version has shipped),
    `status: draft`, the prior version's review and sign-off cleared — while the shipped version
    stays shipped in the shipped record (`implementedIn:`/`shippedVersion:`, untouched). If a
    question was deferred to this version, `em slice mark-implemented` already opened the draft
@@ -332,7 +340,9 @@ For each slice:
    that **never shipped** (`ready-to-implement` with `ratifiedBy` set — a gap answered mid-build):
    the ratification is withdrawn and the draft reopens at the **same** `version:` (GH #486 — a
    number moves only once that version has shipped, so no `## Delta` is owed and no
-   `--keep-version` is needed; the flag is a no-op there). Either way the new version is a new spec:
+   `--keep-version` is needed; the flag is a no-op there). A question deferred to v(N+1) on that
+   unshipped doc stays deferred through the withdraw and reopens when v(N) ships. Either way the
+   new version is a new spec:
    write the delta into `## Delta`, walk it in a review session (`em slice review --by`), and
    only then does `em slice ratify --by <name>` sign it. **Commit before ratifying (MIL-284):**
    `em slice ratify` records the commit and body hash it signs and refuses a doc with uncommitted

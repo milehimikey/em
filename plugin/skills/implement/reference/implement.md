@@ -90,8 +90,9 @@ exception for the precise condition this depends on. What's different is sequenc
   ratified until `em slice ratify` actually runs.** `--slice-ready` keeps reading `false` the
   whole time you're building — that's expected, not a signal to stop, as long as the doc's
   `status` is `reviewed` (not `draft`: an un-reviewed doc is never a valid base, inline or not).
-  On an inline branch the human typically runs `em slice ratify --no-ref` as part of approving
-  the PR (`--no-ref` because the branch is headed for a squash/rebase merge) — not something you
+  On an inline branch the human typically runs `em slice ratify` as part of approving the PR
+  (with `--no-ref`, or `merge: squash` in `em-policy.yaml`, because the branch is headed for a
+  squash/rebase merge) — not something you
   do for them, and not something you should expect to have happened before the PR is up for
   review. Before you report the slice done, or treat §6's merge-time flip as legitimate,
   re-check `--slice-ready` yourself and confirm it now reads `true` with `ratifiedBy:` set — if
@@ -99,9 +100,10 @@ exception for the precise condition this depends on. What's different is sequenc
 - **A post-signature doc edit still trips the hash check.** `ratifiedHash` doesn't know or care
   which branch it was computed on — if something changes the doc's body after the human has
   signed it (a gap surfaces, §4), `--slice-ready` and `em slice ratify` both refuse the stale
-  signature exactly as they would across two PRs. Route it through `em slice revise --withdraw`,
-  review, re-ratify (§4) — inline doesn't shortcut that loop, it just means the re-sign happens
-  on the branch you're already on instead of a fresh one.
+  signature exactly as they would across two PRs. §4 says which route fits: a prose gap is
+  re-signed in place by the human with `em slice amend --by <their name>`; a behaviour gap goes
+  through `em slice revise --withdraw`, review, re-ratify. Inline doesn't shortcut either — it just
+  means the re-sign happens on the branch you're already on instead of a fresh one.
 - **Not every slice is a candidate.** A slice owning a `public` command, event or view
   (`isPublicTouchingSlice`) keeps the separate doc PR — the contract is a promise to consumers
   who never see your implementation diff, and `em slice ratify` already refuses a public-touching
@@ -237,8 +239,21 @@ undocumented ordering, a contradiction with adjacent code. The discipline:
 
 - **Stop that thread and surface it.** State precisely what's unspecified, the options, and
   your recommendation. The human resolves it — at the model, where the resolution lands as an
-  answered open question or a small ratified delta alongside your fix, so the decision is
-  recorded instead of buried in an implementation diff.
+  answered open question, a prose amendment or a ratified revision alongside your fix, so the
+  decision is recorded instead of buried in an implementation diff.
+- **Classify the gap, and say which kind it is.** A **prose gap** is the doc's wording being
+  unclear or incomplete in a section that carries no behaviour: Intent, Trigger & Actor,
+  Dependencies & Read Models Affected, Consumed by (a project can change that list in
+  `em-policy.yaml`). A **behaviour gap** is anything a scenario, invariant, field, error flow or
+  contract would have to change for. When you are unsure, it is behaviour.
+- **A prose gap: propose the wording; the human amends it in this PR.** Write the proposed text
+  in your report or the PR description. The human puts it in the doc and runs `em slice amend
+  <model>.em <slice-key> --by <their name>`: same version, review kept, the slice stays
+  `--slice-ready`, and the amendment travels in the implementation PR that found the gap. The build
+  continues; you never run `amend` yourself, for the same reason you never run `ratify` — `--by`
+  names a human. `amend` refuses a behaviour section, so a misclassified gap is caught.
+- **A behaviour gap: stop that thread.** Surface it. If the build will not wait for the answer,
+  defer it with `em slice defer` (next bullet); otherwise the doc is revised as below.
 - **A question this build will not wait on is deferred through `em slice defer`, never written
   into the doc by hand** (GH #253). On a ratified doc the body is the signed spec, but a deferral
   sits outside `ratifiedHash`: `em slice defer <model>.em <slice-key> "<question>" --until v<n>
@@ -247,8 +262,8 @@ undocumented ordering, a contradiction with adjacent code. The discipline:
   untouched. When the slice merges (`mark-implemented`) or is revised, the item is reopened as
   `- [ ]` in the v<n> draft. Never add a `- [ ]` item to the ratified doc yourself: that does
   move the hash.
-- **How a delta is ratified on a doc that never shipped** (it is `ready-to-implement` with
-  `ratifiedBy` set) when the spec itself must change: once the human has answered, the doc changes
+- **How a behaviour change is ratified on a doc that never shipped** (it is `ready-to-implement`
+  with `ratifiedBy` set) when the spec itself must change: once the human has answered, the doc changes
   by `em slice revise <model>.em <slice-key> --withdraw` (MIL-283: opens the next version as a
   `draft` at the SAME `version:` (GH #486: a number moves only once that version has shipped, so
   there is no bump and no `--keep-version` to pass) with the old sign-off cleared; the ratification
@@ -333,8 +348,8 @@ implementedIn: <PR or commit URL>
 
 This is supply-loop mechanics, not ratification — it's the one edit an implementing agent makes
 to a slice doc, and it's why `em ledger` deliberately excludes these two fields from what
-counts as content. **Do not bump `version:`** — versions bump only when a delta is ratified;
-a bump here is a ledger defect.
+counts as content. **Do not bump `version:`** — a version number moves only when a shipped slice is
+revised (`em slice revise` opens v(N+1)); a hand bump here is a ledger defect.
 
 `em slice mark-implemented <model>.em <slice-key> <pr-url>` does the flip for you (MIL-103) —
 resolves the doc via the same note-binding join `--slice-ready` uses, is idempotent on a re-run
@@ -531,7 +546,7 @@ everything a spec holds. Don't introduce an intermediate spec document of your o
 | Never implement from a slice that fails `--slice-ready` | The gate is the handoff contract; bypassing it hands you unratified decisions |
 | Never edit a ratified slice doc, except the two §6 fields at merge | Doc content is ratified; edits outside a session are unratified decisions |
 | Never edit the `.em` model | Model edits are ratified decisions — propose, don't write |
-| Never bump `version:` | Versions move only with ratified deltas; see `em ledger` |
+| Never bump `version:` | A number moves only when `em slice revise` opens the next version of a shipped slice; see `em ledger` |
 | Never silently decide unspecified behavior | Silent divergence is the disease the conformance loop exists to catch |
 | Never invent the house rules a first slice needs (stack, style, testing, NFR defaults) | They're the project's decision, ratified in the constitution — §7, not your judgment call |
 | Never regenerate merged code from the model | Generated-then-owned: post-merge code belongs to its owners |
