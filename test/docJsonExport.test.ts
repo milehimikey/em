@@ -126,9 +126,9 @@ function docJson(opts: { includeHtml?: boolean } = {}) {
 const sliceByKey = (doc: any, key: string) => doc.model.slices.find((s: any) => s.key === key);
 
 describe("schema version (R3/R6: own constant, separate from the export schema)", () => {
-  it("emits DOC_EXPORT_SCHEMA_VERSION \"1.1\", not the export SCHEMA_VERSION", () => {
-    expect(DOC_EXPORT_SCHEMA_VERSION).toBe("1.1");
-    expect(docJson().schemaVersion).toBe("1.1");
+  it("emits DOC_EXPORT_SCHEMA_VERSION \"1.2\", not the export SCHEMA_VERSION", () => {
+    expect(DOC_EXPORT_SCHEMA_VERSION).toBe("1.2");
+    expect(docJson().schemaVersion).toBe("1.2");
     // The two constants are distinct surfaces — a bump to one never touches the other.
     expect(DOC_EXPORT_SCHEMA_VERSION).not.toBe(SCHEMA_VERSION);
   });
