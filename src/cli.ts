@@ -1401,6 +1401,9 @@ function reviseAction(commandName: "revise" | "reratify") {
         `note: no conformance findings file (conformance/<date>[-<name>]-findings.json) was found beside the model — unruled findings on "${sliceKey}" could not be checked`,
       );
     }
+    if (opts.keepVersion === true && result.kind === "unshipped-kept") {
+      console.error("notice: --keep-version is the default since 1.23.0 for a ratified version that has not shipped — a version number moves only once that version has shipped; the flag is a no-op here");
+    }
     const what =
       result.kind === "shipped"
         ? `v${result.newVersion - 1} stays shipped; v${result.newVersion} opened as draft`
@@ -1410,8 +1413,8 @@ function reviseAction(commandName: "revise" | "reratify") {
             : `ratification of v${result.newVersion - 1} withdrawn (never shipped); v${result.newVersion} opened as draft`
           : result.kind === "unshipped-kept"
             ? result.shippedVersion !== null
-              ? `ratification of v${result.newVersion} withdrawn; v${result.shippedVersion} stays shipped; reopened as draft at the same version (--keep-version)`
-              : `ratification of v${result.newVersion} withdrawn (never shipped); reopened as draft at the same version (--keep-version)`
+              ? `ratification of v${result.newVersion} withdrawn; v${result.shippedVersion} stays shipped; reopened as draft at the same version`
+              : `ratification of v${result.newVersion} withdrawn (never shipped); reopened as draft at the same version`
             : `v${result.newVersion} was never signed; reopened as draft at the same version`;
     console.log(`revised: ${result.path} (status: draft, version: ${result.newVersion} — ${what})`);
     if (result.reopened > 0) console.log(`re-opened ${result.reopened} deferred question(s)`);
@@ -1426,14 +1429,14 @@ const REVISE_DESCRIPTION =
   "`meaningConfirmed`/`contractChange`) and re-opens the questions deferred to the new version. The " +
   "shipped version stays shipped: `implementedIn:` and the `shipped*` keys are untouched (written first on " +
   "a doc shipped before 1.15). Applies to `status: implemented` (the shipped case) and to a ratified " +
-  "`ready-to-implement` doc (ratification withdrawn, never shipped); a `ready-to-implement` doc with no " +
+  "`ready-to-implement` doc (ratification withdrawn, never shipped — since 1.23.0 that case keeps `version:`, GH #486); a `ready-to-implement` doc with no " +
   "`ratifiedBy:` reopens as draft at the same version; `draft`/`reviewed` refuse — the next version is " +
   "already open. The new version then takes the normal road: `em slice review --by`, `em slice ratify --by`. " +
   "A ratified, never-shipped doc REFUSES without --withdraw (revising withdraws the only implementable version; " +
   "record a question with `em slice defer` instead — it sits outside the hash, GH #253). " +
-  "With --keep-version (GH #262) a ratified, never-shipped doc " +
-  "reopens as a draft at the SAME `version:` — same status flip and sign-off clearing, no bump — for a project that " +
-  "holds every slice at its initial version until a first release; refused on a shipped doc";
+  "Since 1.23.0 (GH #486) a ratified version that has not shipped reopens as a draft at the SAME `version:` (a number " +
+  "moves only once that version has shipped) — a never-shipped doc and a later version ratified over a shipped one " +
+  "alike; --keep-version is a no-op there; refused on a shipped doc";
 
 slice
   .command("revise")
@@ -1443,8 +1446,8 @@ slice
   .option("--withdraw", "GH #236: required on a ratified, never-shipped doc — confirms withdrawing the ratification of the only implementable version")
   .option(
     "--keep-version",
-    "GH #262: reopen a ratified, never-shipped doc as a draft at the same `version:` (no bump) — a correction before a first " +
-      "release, not a delta; refused on a shipped doc, whose version must stay distinct from the next one",
+    "GH #262: reopen at the same `version:` (no bump). The default since 1.23.0 for a ratified, never-shipped doc (a no-op with a " +
+      "notice there), and for a later version ratified over a shipped one; refused on a shipped doc",
   )
   .action(reviseAction("revise"));
 

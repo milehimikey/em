@@ -4043,10 +4043,10 @@ describe("em slice revise (CLI, MIL-283 — successor of reratify)", () => {
     expect(JSON.parse(em(["validate", "shipped.em", "--slice-ready", "shipped-slice", "--json"], dir).stdout).ready).toBe(true);
   });
 
-  it("a ratified, unshipped doc is revised too: ratification withdrawn, draft v3; a second revise refuses (already open)", () => {
+  it("a ratified, unshipped doc is revised too: ratification withdrawn, draft at the same v2 (GH #486); a second revise refuses (already open)", () => {
     const r = em(["slice", "revise", "shipped.em", "shipped-slice"], dir);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; v3 opened as draft");
+    expect(r.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; reopened as draft at the same version");
     const again = em(["slice", "revise", "shipped.em", "shipped-slice"], dir);
     expect(again.status).not.toBe(0);
     expect(again.stderr).toContain("the next version is already open");
@@ -4060,7 +4060,7 @@ describe("em slice revise (CLI, MIL-283 — successor of reratify)", () => {
     writeFileSync(join(dir, "over.em"), 'slice "Over" {\n  ui Screen @Customer\n  command Do Thing note "slices/over.md"\n  event Thing Done\n}\n');
     const r = em(["slice", "revise", "over.em", "over"], dir);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; v3 opened as draft");
+    expect(r.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; reopened as draft at the same version");
     expect(r.stdout).not.toContain("never shipped");
   });
 
@@ -6154,11 +6154,11 @@ describe("API-first gate (CLI, MIL-238)", () => {
     expect(JSON.parse(after.stdout).gates.contractCurrent).toBe(true);
   });
 
-  it("revise takes no confirmation (MIL-283): it clears the prior one, and the follow-up ratify of v2 requires it again", () => {
+  it("revise takes no confirmation (MIL-283): it clears the prior one, and the follow-up ratify requires it again (GH #486: same version)", () => {
     const r = em(["slice", "revise", "shop.em", "place-order", "--withdraw"], dir);
     expect(r.status).toBe(0);
     const content = readFileSync(join(dir, "slices", "place-order.md"), "utf8");
-    expect(content).toContain("status: draft\nversion: 2\n");
+    expect(content).toContain("status: draft\nversion: 1\n");
     expect(content).not.toContain("meaningConfirmed");
     expect(content).not.toContain("contractChange");
     expect(em(["slice", "review", "shop.em", "place-order", "--by", "Sam", "--on", "2026-10-07"], dir).status).toBe(0);

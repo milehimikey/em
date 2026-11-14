@@ -628,10 +628,12 @@ alone — v<N> stays shipped. `em slice mark-implemented` does the same automati
 question was deferred to v<N+1> (`em slice defer`), so known work is on the list the moment the
 previous version lands. Version 2 then takes both human gates like version 1 did: `em slice review
 --by`, then `em slice ratify --by` (which records a fresh `ratifiedRef`/`ratifiedHash`).
-A ratified doc that never shipped may instead be reopened at the **same** `version:` with
-`em slice revise --withdraw --keep-version` (GH #262) — a correction before a first release, not a
-delta, so no `## Delta` is owed; the status flip and sign-off clearing are the same. Refused on a
-shipped doc: the shipped version keeps its number.
+**A version number moves only once that version has shipped** (GH #486, 1.23.0). A ratified doc that
+never shipped is reopened at the **same** `version:` by `em slice revise --withdraw` — a correction
+before the first release, not a delta, so no `## Delta` is owed; the status flip and sign-off
+clearing are the same. (`--keep-version`, GH #262, is an accepted no-op there. A later version
+ratified over a shipped one keeps its number the same way.) Refused on a shipped doc: the shipped
+version keeps its number and `revise` opens v<N+1>.
 
 The deliberate mismatch — `version: 2` open while `implementedIn`/`shippedVersion` still name v1's
 work — is not staleness, it's the **drift signal**: `em export`'s `slice.doc.driftSignal` is
