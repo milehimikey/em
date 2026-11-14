@@ -372,14 +372,18 @@ em conform-supersede <model-name>.em conformance/YYYY-MM-DD-report.md --as-of <t
 
 — this records `locus`/`resolvedBy`/`resolvedOn` on the named findings in the JSON (refusing to
 silently overwrite an already-different `locus`) AND stamps the report's "superseded as of `<rev>`"
-banner in the same call (see below). `locus: code` on an unresolved finding is the carrier for
+banner in the same call (see below). When that call rules the last unruled in-scope finding of a
+shipped slice, it also certifies the slice (`conformedVersion`/`conformedAt`/`conformedOn`, at
+`--as-of`) and prints a `certified:` line — do not run `em slice conform` for it afterwards (it
+would only report `already certified`). `locus: code` on an unresolved finding is the carrier for
 "the spec is right, the code is wrong" — no doc delta required for that case any more; `locus:
 model` means fix the `.em` (apply the proposed red note, or a stronger edit the user chose
 instead); `locus: doc` means the slice doc needs a delta/re-ratification; `locus: none` covers
 Accepted divergence/Unpropagated delta/Extraction uncertainty, where nothing needs to change.
 
-**Certifying a slice, once every finding touching it is ruled (MIL-214).** For each in-scope
-slice with no unruled findings left:
+**Certifying a slice (MIL-214).** Ruling the last finding touching a shipped slice already
+certifies it (GH #497, the `certified:` line above). Run this yourself only for a slice with no
+findings, a re-run at a later revision, or one the ruling left uncertified:
 
 ```
 em slice conform <model-name>.em <slice-key> --at <target-repo revision>

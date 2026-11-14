@@ -283,10 +283,13 @@ its current state. Cheap, additive, and safe to run even for a partial ruling �
 ruled on later just add another stamp. `locus: code` is the carrier for "the spec was right,
 the code is wrong" — no model/doc edit needed for that case.
 
-Once every finding touching a slice is ruled, run `em slice conform <model> <key> --at <rev>`
-(MIL-214) — the per-slice-per-version certification fact `driftSignal: in-sync` now depends
-on (a slice sits at `uncertified` from the moment it ships until the first conform sweep
-certifies it).
+Ruling the last in-scope finding of a shipped slice certifies it in the same run (GH #497):
+`em conform-supersede` writes the slice's `conformedVersion`/`conformedAt`/`conformedOn` at its
+`--as-of` revision and prints one `certified:` line per slice — the per-slice-per-version fact
+`driftSignal: in-sync` depends on (a slice sits at `uncertified` from the moment it ships until
+it is certified). You only run `em slice conform <model> <key> --at <rev>` yourself for a slice
+with no findings, for a re-run at a later revision, or when a ruling did not clear the slice
+(it names what is still unruled); after an auto-certification it is a no-op.
 
 Update the state file's `Last conformance:` marker (`em state set-conformance` — refuses
 while any `implemented` slice still has an unruled finding, `--partial` escapes with a loud

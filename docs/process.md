@@ -91,10 +91,12 @@ three specific points:
    stays legible without misleading a later reader into treating a historical report's
    file:line citations as current. `locus: code` on an unresolved finding is the first-class
    carrier for "spec is right, code is wrong" — no doc delta needed for that case any more.
-   Once every in-scope finding touching a slice is ruled, `em slice conform <model> <key> --at
-   <rev>` (MIL-214, [cli.md](cli.md#em-slice-conform-file-slice-key---at-rev)) records that
-   THIS VERSION of that slice was certified — a fact `em state set-conformance` (below) checks
-   before advancing the model-wide marker.
+   Once every in-scope finding touching a slice is ruled, that slice's certification is
+   recorded — by `em conform-supersede` itself in the same run (GH #497, one `certified:` line
+   per slice, at its `--as-of` revision), or by `em slice conform <model> <key> --at <rev>`
+   (MIL-214, [cli.md](cli.md#em-slice-conform-file-slice-key---at-rev)) for a slice with no
+   findings or a re-run — that THIS VERSION of that slice was certified, a fact `em state
+   set-conformance` (below) checks before advancing the model-wide marker.
    `em state set-conformance` refuses while any `implemented` slice still has an unruled finding
    in scope (`--partial` escapes with a loud notice); nothing writes the marker for you.
 

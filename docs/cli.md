@@ -4651,6 +4651,12 @@ conformedOn: <local date>
 | `--on <date>` | Certification date, `YYYY-MM-DD` (default: today, local date) |
 | `--skip-findings-check` | Certify even with unruled findings in scope — prints a loud notice on stderr |
 
+**You often do not need to run this after a ruling (GH #497).** [`em conform-supersede`](#em-conform-supersede-file-report-path)
+`--locus --by` runs this command's own gate for every shipped slice a ruling touched and certifies
+the ones that pass, at its `--as-of` revision. This command stays for the no-findings case, for a
+re-run at a later revision, and for a slice the ruling did not clear; after an auto-certification at
+the same revision it is a clean no-op (`already certified`).
+
 **Squash and rebase merges, and non-git identifiers (GH #261, 1.17.0).** The natural moment to
 certify is from the pull-request branch — the implementation is deployed to a per-PR environment,
 the sweep runs, the slice is certified before merge — and the obvious `--at` is that branch's
@@ -5374,8 +5380,10 @@ This is what makes the "two dated runs, not a track record" honesty register hon
 nobody's told you is stale reads as current.
 
 `<file>` is only used to resolve `<report-path>`'s base directory (the same "`.em` file's own
-directory" convention every doc/note/report path in `em` uses) — the model itself is never
-compiled, and neither the `.em` nor any slice doc is touched.
+directory" convention every doc/note/report path in `em` uses). The banner and the findings
+ruling never compile the model or touch a slice doc; the one exception is the auto-certification
+below, which compiles the model once and writes a slice doc's `conformed*` fields when (and only
+when) a ruling just cleared a shipped slice.
 
 | Flag | Effect |
 |---|---|
@@ -5435,8 +5443,33 @@ em conform-supersede model.em conformance/2026-08-23-report.md --as-of a1b2c3d -
 # -> stamped superseded: conformance/2026-08-23-report.md (as of a1b2c3d, findings 1, on 2026-09-08)
 ```
 
+**Ruling the last finding certifies the slice (GH #497).** After a `--locus`/`--by` ruling is
+recorded, every distinct slice named by the ruled findings (a finding's `slice`; `slice: null`
+names none and certifies nothing) is handed to `em slice conform`'s own logic — the same gate, not
+a copy: no unruled in-scope finding left in any findings file at the revision (a still-unruled
+`slice: null` finding blocks every slice), the slice shipped, an `implementedIn:` link present.
+A slice that passes gets `conformedVersion` (the shipped version), `conformedAt` and `conformedOn`
+written in the same run, one line per slice:
+
+```
+# -> certified: slices/checkout.md (conformedVersion: 2, conformedAt: a1b2c3d, conformedOn: 2026-09-08) — last in-scope finding ruled
+```
+
+- **The revision is `--as-of`** — the value `em slice conform --at` takes today. It is only used
+  when the ruled findings file's own `revision` equals `--as-of`; otherwise nothing is certified
+  (the gate reads files by revision and would pass vacuously against ones it never saw).
+- **A slice that does not pass is skipped silently** — findings still unruled, not shipped yet, no
+  `implementedIn:`, or the slice has errors. Nothing is refused and the ruling still stands;
+  run `em slice conform` to see why.
+- **Idempotent.** Re-running prints no `certified:` line for a slice already certified at that
+  revision, and a following `em slice conform <key> --at <rev>` is a clean no-op
+  (`already certified`). `em slice conform` stays for a slice with no findings and for re-runs;
+  `em slice conform --preview` is unaffected. If the model fails to compile, a one-line `warn:` is
+  printed and nothing is certified.
+
 There is no MCP tool for this command: it's a write/mutate operation (same as `em slice ratify`),
-and MCP parity in this codebase covers *read* surfaces with `--json` (see docs/mcp.md).
+and MCP parity in this codebase covers *read* surfaces with `--json` (see docs/mcp.md). It has no
+`--json` output, so no schema changes.
 
 ## `em contract`
 

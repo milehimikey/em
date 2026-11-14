@@ -4222,6 +4222,80 @@ describe("em slice conform (CLI, MIL-214)", () => {
   });
 });
 
+describe("em conform-supersede auto-certification (CLI, GH #497)", () => {
+  let dir: string;
+  const DOC = () =>
+    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\n" +
+    "implementedIn: https://github.com/org/repo/pull/1\n---\n# Slice\n\nbody\n";
+  const finding = (id: number, slice: string | null) => ({
+    id, surface: "structural", class: "Real drift", slice, evidence: `e${id}`, locus: null, resolvedBy: null, resolvedOn: null,
+  });
+  const writeFindings = (name: string, rev: string, findings: unknown[]) => {
+    writeFileSync(join(dir, "conformance", `${name}-report.md`), `# Report\n\n- **Target repo:** x @ \`${rev}\`\n`);
+    writeFileSync(
+      join(dir, "conformance", `${name}-findings.json`),
+      JSON.stringify({ findingsSchemaVersion: "1.0", model: "m.em", report: `conformance/${name}-report.md`, revision: rev, findings }, null, 2),
+    );
+  };
+  const rule = (name: string, rev: string, ids: string) =>
+    em(["conform-supersede", "m.em", `conformance/${name}-report.md`, "--as-of", rev, "--findings", ids, "--locus", "code", "--by", "Alex", "--on", "2026-11-13"], dir);
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-supersede-certify-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    mkdirSync(join(dir, "conformance"), { recursive: true });
+    writeFileSync(join(dir, "slices", "alpha.md"), DOC());
+    writeFileSync(join(dir, "slices", "beta.md"), DOC());
+    writeFileSync(join(dir, "slices", "gamma.md"), DOC());
+    writeFileSync(
+      join(dir, "m.em"),
+      'slice "Alpha" {\n  command Do Alpha note "slices/alpha.md"\n  event Alpha Done\n}\n' +
+        'slice "Beta" {\n  command Do Beta note "slices/beta.md"\n  event Beta Done\n}\n' +
+        'slice "Gamma" {\n  command Do Gamma note "slices/gamma.md"\n  event Gamma Done\n}\n',
+    );
+  });
+  afterAll(() => rmTemp(dir));
+
+  it("certifies at --as-of only when the last in-scope finding is ruled; one line per slice; re-run and slice conform are no-ops", () => {
+    writeFindings("2026-11-10", "rev1", [finding(1, "alpha"), finding(2, "alpha"), finding(3, "beta")]);
+    const first = rule("2026-11-10", "rev1", "1");
+    expect(first.status).toBe(0);
+    expect(first.stdout).not.toContain("certified:");
+    expect(readFileSync(join(dir, "slices", "alpha.md"), "utf8")).not.toContain("conformedVersion");
+
+    const second = rule("2026-11-10", "rev1", "2-3");
+    expect(second.status).toBe(0);
+    const lines = second.stdout.split("\n").filter((l) => l.startsWith("certified:"));
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain("slices/alpha.md (conformedVersion: 1, conformedAt: rev1, conformedOn: 2026-11-13)");
+    expect(lines[1]).toContain("slices/beta.md");
+    expect(readFileSync(join(dir, "slices", "alpha.md"), "utf8")).toContain("conformedAt: rev1");
+
+    expect(rule("2026-11-10", "rev1", "2-3").stdout).not.toContain("certified:");
+    const conform = em(["slice", "conform", "m.em", "alpha", "--at", "rev1", "--on", "2026-11-14"], dir);
+    expect(conform.stdout).toContain("already certified (no-op)");
+  });
+
+  it("a slice: null finding certifies nothing, and a still-unruled null finding blocks the ruled slice", () => {
+    writeFindings("2026-11-11", "rev2", [finding(1, null), finding(2, "gamma")]);
+    const ruledGamma = rule("2026-11-11", "rev2", "2");
+    expect(ruledGamma.stdout).not.toContain("certified:");
+    expect(readFileSync(join(dir, "slices", "gamma.md"), "utf8")).not.toContain("conformedVersion");
+    const ruledNull = rule("2026-11-11", "rev2", "1");
+    expect(ruledNull.status).toBe(0);
+    expect(ruledNull.stdout).not.toContain("certified:"); // null slice names no slice
+    expect(readFileSync(join(dir, "slices", "gamma.md"), "utf8")).not.toContain("conformedVersion");
+  });
+
+  it("an unshipped slice is not certified", () => {
+    writeFileSync(join(dir, "slices", "gamma.md"), DOC().replace("status: implemented", "status: draft"));
+    writeFindings("2026-11-12", "rev3", [finding(1, "gamma")]);
+    const r = rule("2026-11-12", "rev3", "1");
+    expect(r.status).toBe(0);
+    expect(r.stdout).not.toContain("certified:");
+  });
+});
+
 describe("em slice conform --preview (CLI, GH #400)", () => {
   let dir: string;
   const DRAFT_DOC =
