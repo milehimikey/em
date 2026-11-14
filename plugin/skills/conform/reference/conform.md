@@ -431,8 +431,12 @@ mode yet.
 End of run: update the state file's `Last conformance:` marker with
 
 ```
-em state set-conformance <target-repo revision> --report conformance/YYYY-MM-DD-report.md
+em state set-conformance <target-repo revision> --report conformance/YYYY-MM-DD-report.md --by <name>
 ```
+
+Order at the end of a run: rule on every finding (`em conform-supersede --locus ... --by ...`) —
+the ruling that clears a slice's last finding certifies that slice itself — then this one
+`set-conformance` call. `--by` is only used when the design version must be bumped.
 
 — the revision is the one you just diffed against, so the next run's scope starts from here.
 The command writes the exact format step 1 parses back out; never hand-edit the bullet. Gates read every same-revision findings file (the report's own `-findings.json` first, else every file whose `revision` matches). The same-revision lookup uses the report's OWN revision (its `Target repo: … @ <rev>` header line; the caller's `<rev>` / `--as-of` only when the report has none).
@@ -498,13 +502,13 @@ A full (non-`--partial`) `em state set-conformance` does one more thing (MIL-218
 **certifies** the model's current design version — writes `certified: { at, on, report,
 findings }` into that version's `model-versions/v<N>.json` manifest, and rewrites the state
 file's `Certified:` bullet. This is the "conform ran clean against version N" fact a
-stakeholder or a release note can point at. It only works on an already-**bumped** design
-version — `em state set-conformance` refuses (pointing at `em model version bump`) if no
-manifest exists yet, or if the model has drifted since the last bump (the certification would
-otherwise name a version that isn't what conform actually walked). If the model changed during
-this conform run (a slice's `version:` moved, or the `.em` file itself changed), bump a new
-design version (`em model version bump --by <name>`) before the final `em state
-set-conformance` call. `--partial` never certifies. See `docs/process.md#model-versions`.
+stakeholder or a release note can point at. If no design version exists yet, or the model
+changed since the last bump (a slice's `version:` moved, or the `.em` file itself changed), the
+same call **bumps a new design version first** — the code `em model version bump` runs — and
+certifies that one. That bump needs `--by <name>`: without it the call refuses and writes nothing.
+When the current version is already fresh, `--by` is not needed. Never run a separate `em model
+version bump` just to satisfy this call (use it only for a deliberate checkpoint). `--partial`
+never bumps or certifies. See `docs/process.md#model-versions`.
 
 Conform doesn't chain to another phase automatically — it's a recurring loop, not a step in
 building the model. Suggest running it again next time the target codebase has moved, at

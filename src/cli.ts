@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, renameSync, rmSync } from "node:fs";
 import { cp, mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -169,6 +169,7 @@ import {
   findCertifiedVersion,
   latestModelVersionNumber,
   modelVersionDrift,
+  modelVersionManifestPath,
   runCertifyModelVersion,
   runModelVersionBump,
 } from "./cli/modelVersion.js";
@@ -1285,7 +1286,7 @@ slice
         console.error(`em slice ratify: ${flags.message}`);
         process.exit(1);
       }
-      const { model, refs, diagnostics, source } = compileFile(file);
+      const { model, refs, diagnostics } = compileFile(file);
       printDiagnostics(diagnostics);
       sliceKey = resolveSliceOrExit("em slice ratify", model, refs, sliceKey);
 
@@ -1350,7 +1351,6 @@ slice
               (noRef ? " — ratifiedHash only, no ratifiedRef (--no-ref)" : "")
           : `already ratified (no-op): ${result.path}`,
       );
-      warnModelVersionDrift(dirname(file), model, refs, source, `ratifying "${sliceKey}"`);
     },
   );
 
@@ -1369,7 +1369,7 @@ function reviseAction(commandName: "revise" | "reratify") {
           "API-first confirmation belongs to the ratification of the new version (`em slice ratify --by ... --meaning-unchanged`)",
       );
     }
-    const { model, refs, diagnostics, source } = compileFile(file);
+    const { model, refs, diagnostics } = compileFile(file);
     printDiagnostics(diagnostics);
     sliceKey = resolveSliceOrExit(`em slice ${commandName}`, model, refs, sliceKey);
 
@@ -1416,7 +1416,6 @@ function reviseAction(commandName: "revise" | "reratify") {
     console.log(`revised: ${result.path} (status: draft, version: ${result.newVersion} — ${what})`);
     if (result.reopened > 0) console.log(`re-opened ${result.reopened} deferred question(s)`);
     if (result.injected > 0) console.log(`injected ${result.injected} queued question(s) into Open Questions (queue cleared)`);
-    warnModelVersionDrift(dirname(file), model, refs, source, `revising "${sliceKey}"`);
   };
 }
 
@@ -1731,19 +1730,6 @@ function writeStateUpdate(dirOrFile: string, cmdLabel: string, mutate: (text: st
   console.log(`wrote ${loaded.path}`);
 }
 
-/** MIL-218 ruling C: the one-line advisory `em slice ratify`/`reratify` print when the write
- *  they just made pushed the slice-version vector (or, in principle, the `.em` content hash —
- *  never true for these two commands, which only ever edit a slice doc's frontmatter, but
- *  checked anyway so this helper stays the one true predicate) past the last bumped design
- *  version. Silent when no manifest exists at all (`drift.current === null`) — a repo that
- *  never bumped a design version has nothing to be stale against, same silence
- *  `model-version-stale` (rules.ts) holds. Never refuses; advisory only. */
-function warnModelVersionDrift(baseDir: string, model: NormalizedModel, refs: RefsResult, source: string, cmdLabel: string): void {
-  const drift = modelVersionDrift(baseDir, model, refs, source);
-  if (drift.current === null || (!drift.hashChanged && drift.slicesChanged.length === 0)) return;
-  console.error(`warn: ${cmdLabel} moved the model past v${drift.current} — run \`em model version bump\` to record it`);
-}
-
 const state = program
   .command("state")
   .description("read/write the state file's mechanical fields deterministically (see docs/cli.md)");
@@ -1795,7 +1781,11 @@ state
   .argument("[dir]", STATE_DIR_HELP, ".")
   .requiredOption("--report <path>", "path to the conformance report just written")
   .option("--partial", "record the marker as PARTIAL even though some in-scope findings are still unruled")
-  .action((revision: string, dir: string, opts: { report: string; partial?: boolean }) => {
+  .option(
+    "--by <name>",
+    "the bumper's name — required only when a full run must bump the design version first (none yet, or the model moved since); ignored when the current version is fresh",
+  )
+  .action((revision: string, dir: string, opts: { report: string; partial?: boolean; by?: string }) => {
     const loaded = loadStateFile(dir);
     if (!loaded.ok) {
       console.error(loaded.message);
@@ -1823,7 +1813,7 @@ state
       if (!hasErrors(compiled.diagnostics)) {
         const { facts } = resolveSliceDocFacts(compiled.model, compiled.refs, modelDir);
         inScope = new Set(facts.filter((f) => f.shipped).map((f) => f.key));
-        compiledForCertify = { model: compiled.model, refs: compiled.refs, source: compiled.source };
+        compiledForCertify = { model: compiled.model, refs: compiled.refs, source: compiled.hashSource };
       }
     }
 
@@ -1870,7 +1860,40 @@ state
     // rather than blocking the conformance marker on an unrelated model problem — `em validate`
     // is where that problem gets its own diagnostic.
     let certifiedVersion: number | null = null;
+    let bumpedVersion: number | null = null;
     if (!recordPartial && compiledForCertify) {
+      // GH #498: a missing or stale design version is bumped here, through the same
+      // `runModelVersionBump` `em model version bump` uses, then certified. Needs --by; refuses
+      // (nothing written) without it. A fresh current version never needs --by.
+      const drift = modelVersionDrift(modelDir, compiledForCertify.model, compiledForCertify.refs, compiledForCertify.source);
+      const needsBump = drift.current === null || drift.hashChanged || drift.slicesChanged.length > 0;
+      if (needsBump) {
+        const by = opts.by?.trim() ?? "";
+        if (!by) {
+          console.error(
+            `em state set-conformance: ${drift.current === null ? "no design version exists yet" : `the model moved past v${drift.current}`} — ` +
+              "pass --by <name> so this run can bump the design version before certifying it",
+          );
+          process.exit(1);
+        }
+        const bumped = runModelVersionBump(
+          modelDir,
+          basename(modelFile),
+          compiledForCertify.model,
+          compiledForCertify.refs,
+          compiledForCertify.source,
+          by,
+          today,
+          GENERATOR_VERSION,
+          false,
+        );
+        if (!bumped.ok) {
+          console.error(`em state set-conformance: ${bumped.message}`);
+          process.exit(1);
+        }
+        bumpedVersion = bumped.version;
+        console.log(`bumped: ${bumped.path} (v${bumped.version})`);
+      }
       const readFiles = findingsFilesOf(resolved);
       const findingsPath = readFiles ? readFiles.map((f) => f.path).join(", ") : null;
       const certifyResult = runCertifyModelVersion(
@@ -1884,6 +1907,8 @@ state
         findingsPath,
       );
       if (!certifyResult.ok) {
+        // No half state: take back the manifest this run just bumped.
+        if (bumpedVersion !== null) rmSync(modelVersionManifestPath(modelDir, bumpedVersion), { force: true });
         console.error(`em state set-conformance: ${certifyResult.message}`);
         process.exit(1);
       }
@@ -1891,10 +1916,19 @@ state
       console.log(`certified: ${certifyResult.path} (v${certifyResult.version} @ ${revision})`);
     }
 
-    writeStateUpdate(dir, "em state set-conformance", (text, t) => setConformance(text, revision, opts.report, t, recordPartial), today);
-    if (certifiedVersion !== null) {
-      writeStateUpdate(dir, "em state set-conformance", (text, t) => setCertified(text, certifiedVersion!, revision, t, t), today);
-    }
+    // One state-file write: `Model version:` (only when bumped), `Last conformance:`, `Certified:`.
+    writeStateUpdate(
+      dir,
+      "em state set-conformance",
+      (text, t) => {
+        let r: PatchResult = { ok: true, text };
+        if (bumpedVersion !== null) r = setModelVersion(text, bumpedVersion, t);
+        if (r.ok) r = setConformance(r.text, revision, opts.report, t, recordPartial);
+        if (r.ok && certifiedVersion !== null) r = setCertified(r.text, certifiedVersion, revision, t, t);
+        return r;
+      },
+      today,
+    );
   });
 
 state

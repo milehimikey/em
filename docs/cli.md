@@ -4319,17 +4319,10 @@ silent. A repeated read model's own earlier instance (`view X again`) is never c
 upstream dependency by itself — only a genuine producing edge into an element of the slice being
 ratified counts.
 
-**Model-version advisory (MIL-218).** After the write, checks whether it pushed the model's
-slice-version vector (or content hash) past the last bumped design version
-(`model-versions/v<N>.json` — see [model-versions.md](model-versions.md)) and, if so, prints
-one line to stderr:
-
-```
-warn: ratifying "<key>" moved the model past v<N> — run `em model version bump` to record it
-```
-
-Silent when no manifest exists at all — a repo that's never bumped a design version isn't
-nagged. Advisory only, same never-refuses posture as the upstream advisory above.
+**Model-version advisory (retired, GH #498).** `ratify` no longer prints a "moved the model past
+v<N>" warning — nothing can be done about it there, and a full `em state set-conformance` now
+bumps the design version itself. `em status` and `em validate` (`model-version-stale`) still
+report a stale version.
 
 ## `em slice mark-implemented <file> <slice-key> <pr-url>`
 
@@ -5135,6 +5128,7 @@ parses back out:
 |---|---|
 | `--report <path>` | Path to the conformance report just written (required) |
 | `--partial` | Record the marker as PARTIAL even though some in-scope findings are still unruled |
+| `--by <name>` | The bumper's name. Required only when a full run must bump the design version first (none yet, or the model moved since); ignored when the current version is fresh |
 
 ```bash
 em state set-conformance abc123f my-model/ --report conformance/2026-08-20-report.md
@@ -5160,20 +5154,23 @@ em state set-conformance abc123f my-model/ --report conformance/2026-08-20-repor
 by every reader of `Last conformance:` — `em conform-scope`'s own `lastConformance.partial`,
 `em status`/`em freshness`'s `conformance[].lastConformance.partial`.
 
-**Certification (MIL-218).** A FULL (non-`--partial`) run also certifies the model's current
-design version: writes `certified: { at, on, report, findings }` into the CURRENT design
-version's `model-versions/v<N>.json` manifest, and rewrites the state file's `Certified:`
-bullet. Refuses (nothing written — not even `Last conformance:`) when no manifest exists yet
-("bump a model version first — `em model version bump`") or when the model has drifted since
-the current manifest was bumped (a slice's `version:` moved, or the `.em` file itself changed —
-the certification would otherwise name a version that isn't what this conform run actually
-walked). `--partial` never certifies; this step is silently skipped (not a failure) when the
-model doesn't compile cleanly, same leniency the findings gate above holds. See
+**Certification (MIL-218, bumps since GH #498).** A FULL (non-`--partial`) run also certifies the
+model's current design version: writes `certified: { at, on, report, findings }` into the current
+`model-versions/v<N>.json` manifest and rewrites the state file's `Certified:` bullet. When no
+manifest exists yet, or the model has moved since the current one was bumped (a slice's `version:`
+moved, or the `.em` file changed), the run first bumps the design version itself — the same code
+`em model version bump` runs, writing `v<N+1>.json` and the `Model version:` bullet — and certifies
+the new version. That bump needs `--by <name>`; without it the run refuses (nothing written, not
+even `Last conformance:`) and says to pass `--by`. When the current version is fresh, `--by` is not
+needed and is ignored. If the bump or the certification cannot be written, nothing is written. A bump
+prints `bumped: <path> (v<N>)` before the `certified:` line. `--partial` never bumps or certifies;
+the step is silently skipped (not a failure) when the model doesn't compile cleanly. `em model
+version bump` stays as its own command for a deliberate checkpoint. See
 [model-versions.md](model-versions.md).
 
 ```bash
-em model version bump my-model/my-model.em --by "Alex Rivera"
-em state set-conformance abc123f my-model/ --report conformance/2026-08-20-report.md
+em state set-conformance abc123f my-model/ --report conformance/2026-08-20-report.md --by "Alex Rivera"
+# -> bumped: my-model/model-versions/v1.json (v1)
 # -> certified: my-model/model-versions/v1.json (v1 @ abc123f)
 # -> wrote my-model/.event-modeling.md
 ```

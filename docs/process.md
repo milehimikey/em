@@ -285,18 +285,20 @@ now (MIL-218). Two facts, kept deliberately separate, because they answer differ
   together — the same judgment call that decides "is this worth a changelog entry."
 - **Certified version** — what was *proven*. Set by a full (non-`--partial`) `em state
   set-conformance` ([cli.md](cli.md#em-state-set-conformance-revision-dir)): "design version N was certified
-  at revision R on date D." A `--partial` marker never certifies. Certification only applies to
-  an already-bumped design version — it names what conform actually walked, never a guess.
+  at revision R on date D." A `--partial` marker never certifies. Certification names what conform
+  actually walked, never a guess: a full run that finds no design version, or a stale one, bumps it
+  first (`--by <name>`, same code as `em model version bump`) and certifies the new version.
 
 Both facts live in a sidecar manifest per design version, `model-versions/v<N>.json` (history,
 not progress — see [model-versions.md](model-versions.md) for the shape), pointed to from two
 new bullets in `.event-modeling.md`: `Model version:` and `Certified:`.
 
-**`em` warns, never auto-bumps.** If the slice-version vector or the `.em` file's own content
-has moved since the last bump, `em status`, `em validate` (`model-version-stale`), and `em slice
-ratify`/`revise` all say so — on stderr or in their JSON — but nothing forces a bump. The same
-"humans ratify, tools verify" rule the rest of this document holds: a design version is a
-deliberate checkpoint the team calls, not a side effect of an unrelated edit.
+**A conform run bumps for you; the rest only warn.** If the slice-version vector or the `.em` file's
+own content has moved since the last bump, `em status` and `em validate` (`model-version-stale`) say
+so, and the next full `em state set-conformance --by <name>` bumps and certifies in one step (`em
+slice ratify`/`revise` no longer print a version warning, since 1.23.0). `em model version bump` stays
+available for a deliberate checkpoint the team calls earlier. The "humans ratify, tools verify" rule
+holds: `--by` names who owns the bump, and nothing bumps without it.
 
 ## Seams between models: who does what
 
