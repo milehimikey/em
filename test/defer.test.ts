@@ -218,9 +218,11 @@ describe("em slice defer (CLI acceptance, MIL-275)", () => {
     }
   });
   it("reratify to v2 re-opens exactly that item and slice-ready fails again", () => {
-    // Ratify by hand (this is a defer fixture, not a ratify one) so reratify has a ratified doc to revise.
-    writeFileSync(slicePath(), readFileSync(slicePath(), "utf8").replace("status: reviewed", "status: ready-to-implement\nratifiedBy: Alex\nratifiedOn: 2026-10-02"));
-    const r = em(["slice", "reratify", "model.em", "pay", "--withdraw"], dir);
+    // Ship v1 by hand (this is a defer fixture, not a ratify one): since GH #486 a version number
+    // moves only once that version has shipped, so v2 — and the questions deferred to it — opens
+    // from a shipped doc.
+    writeFileSync(slicePath(), readFileSync(slicePath(), "utf8").replace("status: reviewed", "status: implemented\nimplementedIn: https://github.com/org/repo/pull/1\nratifiedBy: Alex\nratifiedOn: 2026-10-02"));
+    const r = em(["slice", "reratify", "model.em", "pay"], dir);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("re-opened 1 deferred question(s)");
     expect(readFileSync(slicePath(), "utf8")).toContain("\n- [ ] What is the retry policy?\n");
@@ -382,9 +384,9 @@ describe("em slice defer --from-issue (CLI acceptance, MIL-281)", () => {
     expect(defer("--from-issue", "final").status).toBe(0);
     expect(readFileSync(modelPath(), "utf8")).toContain("  event Paid\n");
     expect(ready().stderr).not.toContain("issue");
-    // Ratify by hand (this is a defer fixture) so reratify has a ratified doc to revise.
-    writeFileSync(slicePath(), readFileSync(slicePath(), "utf8").replace("status: reviewed", "status: ready-to-implement\nratifiedBy: Alex\nratifiedOn: 2026-10-02"));
-    const r = em(["slice", "reratify", "model.em", "pay", "--withdraw"], dir);
+    // Ship v1 by hand (this is a defer fixture): v2 opens from a shipped doc (GH #486).
+    writeFileSync(slicePath(), readFileSync(slicePath(), "utf8").replace("status: reviewed", "status: implemented\nimplementedIn: https://github.com/org/repo/pull/1\nratifiedBy: Alex\nratifiedOn: 2026-10-02"));
+    const r = em(["slice", "reratify", "model.em", "pay"], dir);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("re-opened 2 deferred question(s)");
     expect(readFileSync(slicePath(), "utf8")).toContain("- [ ] What about chargebacks?\n- [ ] Is Paid final?\n");
