@@ -128,6 +128,7 @@ import { runSliceIndex } from "./cli/sliceIndex.js";
 import { formatNextDraftNotice, runMarkImplemented } from "./cli/markImplemented.js";
 import { runRatify, parseMeaningFlags, meaningConfirmationLine, MeaningConfirmation } from "./cli/ratify.js";
 import { runReview } from "./cli/review.js";
+import { runBatch, BatchInput } from "./cli/batchSign.js";
 import { certifyRuledSlices, runConformSupersede } from "./cli/conformSupersede.js";
 import { buildConformScope, changedPathsSince, resolveSliceDocFacts, seedAsisModel, SliceDocFacts } from "./cli/conformScope.js";
 import { buildSliceDocContent, buildStubDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
@@ -1171,13 +1172,18 @@ slice
       "refuses a doc already `ready-to-implement`/`implemented`; never touches `version:` or the doc body",
   )
   .argument("<file>", "input .em file")
-  .argument("<slice-key>", "slice export key (kebab-case)")
+  .argument("[slice-key...]", "slice export key (kebab-case); two or more keys review them as one all-or-nothing batch (GH #491)")
+  .option("--storyline <name>", "review every slice of this storyline as one all-or-nothing batch (GH #491; resolves as `em engagement new --storyline` does); not with slice keys")
   .requiredOption("--by <name>", "the reviewer's (or facilitator's) name")
   .option("--on <date>", "review date, YYYY-MM-DD (default: today, local date)")
   .option("--roster <path>", "ratifier roster to check --by against (GH #259; default: the nearest ratifiers.yaml above the model, none = unrestricted)")
   .option("--again", "re-record reviewedBy/reviewedOn on a doc already `status: reviewed` (prints old -> new); still refused on ready-to-implement/implemented")
   .option("--allow-open", "record the review although `## Open Questions` has unchecked items (a deliberately partial walk); prints a notice with the open count")
-  .action((file: string, sliceKey: string, opts: { by: string; on?: string; roster?: string; again?: boolean; allowOpen?: boolean }) => {
+  .action((file: string, sliceKeys: string[], opts: { by: string; on?: string; roster?: string; again?: boolean; allowOpen?: boolean; storyline?: string }) => {
+    if (isBatchRequest("em slice review", sliceKeys, opts.storyline, undefined)) {
+      return batchAction({ kind: "review", file, keys: sliceKeys, storyline: opts.storyline, by: opts.by, on: opts.on, roster: opts.roster, again: opts.again, allowOpen: opts.allowOpen });
+    }
+    let sliceKey = sliceKeys[0];
     const { model, refs, diagnostics } = compileFile(file);
     printDiagnostics(diagnostics);
     sliceKey = resolveSliceOrExit("em slice review", model, refs, sliceKey);
@@ -1225,7 +1231,54 @@ slice
     );
   });
 
-/** MIL-238: `, meaningConfirmed: true` / `, contractChange: "<why>"` for a success line, or "". */
+/** GH #491: is this `em slice review|ratify` a batch (two or more keys, or --storyline)? Exits 1 on
+ *  a misuse: no key and no --storyline, keys together with --storyline, or (ratify) the per-slice
+ *  --meaning-unchanged/--contract-change with a batch. A single key is not a batch: it keeps today's path. */
+function isBatchRequest(
+  command: string,
+  keys: string[],
+  storyline: string | undefined,
+  ratifyFlags: { meaningUnchanged?: boolean; contractChange?: string } | undefined,
+): boolean {
+  if (keys.length === 0 && storyline === undefined) {
+    console.error("error: missing required argument 'slice-key' (or pass --storyline <name>)");
+    process.exit(1);
+  }
+  if (keys.length > 0 && storyline !== undefined) {
+    console.error(`${command}: --storyline cannot be combined with slice keys`);
+    process.exit(1);
+  }
+  const batch = storyline !== undefined || keys.length > 1;
+  if (batch && ratifyFlags && (ratifyFlags.meaningUnchanged || ratifyFlags.contractChange !== undefined)) {
+    console.error(
+      `${command}: --meaning-unchanged/--contract-change answer for one slice and cannot be used with a batch — ` +
+        "ratify the public-touching slice singly",
+    );
+    process.exit(1);
+  }
+  return batch;
+}
+
+/** GH #491: the shared body of a batch review/ratify — compile, plan every slice, write only if all pass. */
+function batchAction(a: Omit<BatchInput, "model" | "refs" | "diagnostics" | "on"> & { on?: string }): void {
+  const command = `em slice ${a.kind}`;
+  const { model, refs, diagnostics, source } = compileFile(a.file);
+  printDiagnostics(diagnostics);
+  if (a.on !== undefined && !isValidDateString(a.on)) {
+    console.error(`${command}: invalid --on date "${a.on}" — expected YYYY-MM-DD`);
+    process.exit(1);
+  }
+  const result = runBatch({ ...a, model, refs, diagnostics, on: a.on ?? localIsoDate() });
+  if (!result.ok) {
+    for (const line of result.errors) console.error(line);
+    process.exit(1);
+  }
+  for (const line of result.stderr) console.error(line);
+  for (const line of result.stdout) console.log(line);
+  if (a.kind === "ratify") warnModelVersionDrift(dirname(a.file), model, refs, source, "ratifying this batch");
+}
+
+/** MIL-238: `, meaningConfirmed: true` /`, contractChange: "<why>"` for a success line, or "". */
 function confirmationSuffix(c: MeaningConfirmation | null): string {
   return c ? `, ${meaningConfirmationLine(c)}` : "";
 }
@@ -1250,7 +1303,8 @@ slice
       "git is not consulted",
   )
   .argument("<file>", "input .em file")
-  .argument("<slice-key>", "slice export key (kebab-case)")
+  .argument("[slice-key...]", "slice export key (kebab-case); two or more keys ratify them as one all-or-nothing batch (GH #491)")
+  .option("--storyline <name>", "ratify every slice of this storyline as one all-or-nothing batch (GH #491; resolves as `em engagement new --storyline` does); not with slice keys; a public-touching slice is refused from a batch")
   .requiredOption("--by <name>", "the ratifier's name")
   .option(
     "--no-ref",
@@ -1277,9 +1331,13 @@ slice
   .action(
     (
       file: string,
-      sliceKey: string,
-      opts: { by: string; on?: string; skipReview?: boolean; meaningUnchanged?: boolean; contractChange?: string; ref?: boolean; roster?: string },
+      sliceKeys: string[],
+      opts: { by: string; on?: string; skipReview?: boolean; meaningUnchanged?: boolean; contractChange?: string; ref?: boolean; roster?: string; storyline?: string },
     ) => {
+      if (isBatchRequest("em slice ratify", sliceKeys, opts.storyline, opts)) {
+        return batchAction({ kind: "ratify", file, keys: sliceKeys, storyline: opts.storyline, by: opts.by, on: opts.on, roster: opts.roster, skipReview: opts.skipReview, noRef: opts.ref === false });
+      }
+      let sliceKey = sliceKeys[0];
       // commander: `--no-ref` sets `opts.ref === false`; unset leaves it undefined (ref recorded).
       const noRef = opts.ref === false;
       const flags = parseMeaningFlags(opts.meaningUnchanged, opts.contractChange);

@@ -4078,9 +4078,23 @@ Scoped the same way `em slice ratify`/`em export --slice`/`em validate --slice-r
 model error concerning THIS slice (its bare export key, or an element ref prefixed `<key>/`)
 refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model doesn't block it.
 
+**Batch (GH #491, 1.23.0).** A storyline is walked as a unit, so it can be signed as one:
+`em slice review <file> <key> <key>... --by <name>` (two or more keys) or
+`em slice review <file> --storyline <name> --by <name>`. Keys together with `--storyline` is an error;
+`--storyline` resolves exactly as `em engagement new --storyline` does (a continuation slice stands in as
+its originating unit). The batch is **all-or-nothing**: every slice is planned first through the same checks
+a single key gets (errors scoped to the slice, roster, the Open Questions gate, `--again`, `--allow-open`),
+and the docs are written only when every slice is accepted — otherwise nothing is written, every refusal is
+listed on stderr (`em slice review: <key>: <reason>`, then a summary line) and the exit code is 1. A slice
+already reviewed by the same name and date counts as accepted (a no-op line). Two keys that resolve to one
+doc (a `covers:` cross-binding) write it once. Output is the single-key line, one per slice, in order; the
+per-slice frontmatter record is unchanged. There is no `--json` on this command, so none is added. A single
+key behaves exactly as before.
+
 | Flag | Effect |
 |---|---|
 | `--by <name>` | **Required.** The reviewer's (or facilitator's) name |
+| `--storyline <name>` | Batch: every slice of this storyline (not with slice keys) |
 | `--on <date>` | Review date, `YYYY-MM-DD` (default: today, local date) |
 | `--again` | Re-record `reviewedBy`/`reviewedOn` on a doc already `status: reviewed` (prints old -> new) |
 | `--allow-open` | Record the review although `## Open Questions` has unchecked items; prints a notice with the count |
@@ -4270,9 +4284,20 @@ Scoped the same way `em export --slice`/`em validate --slice-ready`/`mark-implem
 a model error concerning THIS slice (its bare export key, or an element ref prefixed `<key>/`)
 refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model doesn't block it.
 
+**Batch (GH #491, 1.23.0).** `em slice ratify <file> <key> <key>... --by <name>` or
+`em slice ratify <file> --storyline <name> --by <name>` ratifies several slices in one run — the same
+batch rules as [`em slice review`](#em-slice-review-file-slice-key---by-name) (all-or-nothing, planned
+first, every refusal listed, no `--json`). `--storyline` resolves exactly as `em engagement new
+--storyline` does, a continuation slice standing in as its originating unit. Per slice, everything above
+applies unchanged: the review gate, `--skip-review`, `--no-ref`, the uncommitted-doc refusal, the roster
+check and the upstream advisory. Two things differ. A **public-touching** slice is refused from the batch
+(the message names it) — `--meaning-unchanged` / `--contract-change` is a per-slice answer, so ratify it
+singly. And passing `--meaning-unchanged` or `--contract-change` with a batch is an error.
+
 | Flag | Effect |
 |---|---|
 | `--by <name>` | **Required.** The ratifier's name |
+| `--storyline <name>` | Batch: every slice of this storyline (not with slice keys) |
 | `--on <date>` | Ratification date, `YYYY-MM-DD` (default: today, local date) |
 | `--skip-review` | Ratify a doc that never passed the review gate; prints a loud notice on stderr and records `reviewSkipped: <status>` on the doc (GH #260) |
 | `--no-ref` | (GH #255) Record `ratifiedHash:` only — no `ratifiedRef:`, and git is not consulted (the uncommitted-changes check does not apply). For a repo whose squash/rebase merges would leave the ref unreachable. Removes a `ratifiedRef:` line already on the doc |
