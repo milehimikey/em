@@ -1262,7 +1262,7 @@ function isBatchRequest(
 /** GH #491: the shared body of a batch review/ratify — compile, plan every slice, write only if all pass. */
 function batchAction(a: Omit<BatchInput, "model" | "refs" | "diagnostics" | "on"> & { on?: string }): void {
   const command = `em slice ${a.kind}`;
-  const { model, refs, diagnostics, source } = compileFile(a.file);
+  const { model, refs, diagnostics } = compileFile(a.file);
   printDiagnostics(diagnostics);
   if (a.on !== undefined && !isValidDateString(a.on)) {
     console.error(`${command}: invalid --on date "${a.on}" — expected YYYY-MM-DD`);
@@ -1275,7 +1275,6 @@ function batchAction(a: Omit<BatchInput, "model" | "refs" | "diagnostics" | "on"
   }
   for (const line of result.stderr) console.error(line);
   for (const line of result.stdout) console.log(line);
-  if (a.kind === "ratify") warnModelVersionDrift(dirname(a.file), model, refs, source, "ratifying this batch");
 }
 
 /** MIL-238: `, meaningConfirmed: true` /`, contractChange: "<why>"` for a success line, or "". */
