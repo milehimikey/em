@@ -170,7 +170,8 @@ prose-only change in place: it re-stamps `ratifiedHash:`/`ratifiedSections:` and
 (an unknown heading counts as behaviour); that change goes through `revise`. `--by` names a human,
 exactly as for ratify. For a slice that has not shipped, the amendment travels in the implementation
 PR that found the gap, so the reviewer of the code reads and approves the new wording in the same
-review; for a shipped slice it is a small doc-only PR.
+review. A shipped slice is re-signed at its shipped version, in whichever PR carries the wording
+change; nothing is rebuilt.
 
 **Revise.** `em slice revise` ([cli.md](cli.md#em-slice-revise-file-slice-key)) reopens the doc as
 a **`draft`**: the old sign-off and review record are cleared (neither describes the new text), and
