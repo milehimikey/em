@@ -372,7 +372,7 @@ function parseVersion(raw: string | undefined): number | null {
  * the literal first thing in the file — the template's own guidance comment
  * must be deleted before the frontmatter counts as present.
  */
-function splitFrontmatter(
+export function splitFrontmatter(
   markdown: string,
 ): { fields: Map<string, string>; body: string; frontmatterPresent: boolean } {
   if (!/^---\s*\r?\n/.test(markdown)) return { fields: new Map(), body: markdown, frontmatterPresent: false };
@@ -444,7 +444,7 @@ const DEFERRED_ITEM = /^[ \t]*[-*]\s*\[[xX]\]\s.* — v\d+: .*; deferred to v(\d
  * after a bare heading; keeping them would make an empty section and a one-item section hash
  * differently. Since 1.19.0 `ratifiedBody()` applies this AFTER `stripGeneratedRegions()`.
  */
-function withoutDeferrals(body: string): string {
+export function withoutDeferrals(body: string): string {
   const lines = body.split("\n");
   const start = lines.findIndex((l) => OPEN_QUESTIONS_HEADING.test(l));
   if (start === -1) return body.trimEnd();

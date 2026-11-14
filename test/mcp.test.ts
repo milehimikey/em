@@ -552,10 +552,10 @@ describe("export_model tool", () => {
     expect(cli.stdout).toBe(mcpText + "\n");
   });
 
-  it("GH #401: docJson:true returns the structured doc export (schema 1.0), byte-identical to `em export --doc-json`", async () => {
+  it("GH #401: docJson:true returns the structured doc export (schema 1.1), byte-identical to `em export --doc-json`", async () => {
     const { result, doc } = await callJson(client, "export_model", { file: join(dir, "clean.em"), docJson: true });
     expect(result.isError).toBeFalsy();
-    expect(doc.schemaVersion).toBe("1.0");
+    expect(doc.schemaVersion).toBe("1.1");
     expect(doc.model.slices.map((s: any) => s.key)).toEqual(["place", "open-orders"]);
     expect(doc.model.invariants).toBeDefined(); // the model-level invariant catalog
     const mcpText = (result.content[0] as { type: "text"; text: string }).text;
