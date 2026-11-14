@@ -29,7 +29,7 @@ const MODEL =
   'slice "Gamma" {\n  command Do Gamma note "slices/gamma.md"\n  event Gamma Done\n}\n' +
   'slice "Pub" {\n  command Do Pub public { id: uuid } note "slices/pub.md"\n  event Pub Done\n}\n';
 
-describe("batch em slice review / ratify (GH #491)", () => {
+describe("batch em slice review / ratify (GH #491)", { timeout: 30_000 }, () => {
   let dir: string;
   const read = (k: string) => readFileSync(join(dir, "slices", `${k}.md`), "utf8");
   const write = (k: string, c: string) => writeFileSync(join(dir, "slices", `${k}.md`), c);

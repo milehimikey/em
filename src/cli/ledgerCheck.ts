@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT
 // `em ledger` (MIL-89): checks that a slice doc's `version:` frontmatter field and its content
-// (body + lineage refs) always change together across two git revisions — a version bump with
-// no real content change is a no-op ledger entry, a content change with no version bump is a
-// stale ratification signal, and a version going backwards is a typo/regression. Opt-in,
+// (body + lineage refs) change together across two git revisions — a version bump with no real
+// content change is a no-op ledger entry, a content change with no version bump on a SHIPPED
+// version is a stale ratification signal, and a version going backwards is a typo/regression.
+// GH #489: a same-version content change is legitimate in two states (`em slice revise` on an
+// unshipped version reopens it at the same `version:`; `em slice amend` re-signs a prose-only
+// change in place) — see `sameVersionChangeAccepted`. Opt-in,
 // CI-recipe tier — never folded into `em validate`, which stays a fast function of the current
 // tree (see lineageValidate.ts's header comment, which named this exact shape during MIL-84).
 //
@@ -13,7 +16,7 @@
 
 import { readdirSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
-import { hasUsableFrontmatter, ratifiedBody, SliceDoc, SliceRef } from "../catalog/sliceDoc.js";
+import { hasUsableFrontmatter, ratifiedBody, ratifiedHashScope, shippedRecordOf, SliceDoc, SliceRef } from "../catalog/sliceDoc.js";
 import { readSliceDoc } from "../catalog/readSliceDoc.js";
 import { GitRunner, realGit, listSliceKeysAtRevision, resolveDocAtRevision } from "./diff-inputs.js";
 import { docDirs } from "../catalog/docLocate.js";
@@ -119,6 +122,34 @@ function lineageChanged(oldDoc: SliceDoc, newDoc: SliceDoc): boolean {
   );
 }
 
+/** Why a same-version content change is not a finding (GH #489), or null when it is one.
+ *  - `pre-ship`: the version had not shipped at the OLD revision (`shippedRecordOf` null, or its
+ *    version is an earlier one — a draft reopened for the next version). Nothing external is bound
+ *    to that text yet, so editing it at the same `version:` is the normal revise cycle. This
+ *    covers `draft`/`reviewed` docs with no shipped record and a ratified-but-unshipped doc.
+ *  - `amendment`: the version had shipped, but the new revision records an amendment (`amendedOn`
+ *    / `amendedBy` moved or newly present), the change is body-only (frontmatter lineage is not
+ *    covered by the hash), and `ratifiedHash:` at the new revision matches the body — `em slice
+ *    amend` re-signed exactly this content. A hand-typed `amendedOn` beside a stale hash is not. */
+export type LedgerAcceptedReason = "pre-ship" | "amendment";
+
+export function sameVersionChangeAccepted(oldDoc: SliceDoc, newDoc: SliceDoc, lineageMoved: boolean): LedgerAcceptedReason | null {
+  const shipped = shippedRecordOf(oldDoc);
+  if (shipped === null || shipped.version === null || shipped.version !== oldDoc.version) return "pre-ship";
+  const amendmentRecorded =
+    (newDoc.amendedOn !== null || newDoc.amendedBy !== null) && (newDoc.amendedOn !== oldDoc.amendedOn || newDoc.amendedBy !== oldDoc.amendedBy);
+  if (
+    amendmentRecorded &&
+    !lineageMoved &&
+    newDoc.ratifiedHash !== null &&
+    newDoc.ratifiedHash !== oldDoc.ratifiedHash &&
+    ratifiedHashScope(newDoc.raw, newDoc.ratifiedHash) === "current"
+  ) {
+    return "amendment";
+  }
+  return null;
+}
+
 /**
  * Compare every slice doc's version:/content agreement between two revisions of `anchorFile`'s
  * repo. `to` null means "the current working tree" (same convention as `em diff`). Pure aside
@@ -175,7 +206,7 @@ export function checkLedger(anchorFile: string, from: string, to: string | null,
     let code: LedgerFindingCode | null = null;
     if (newVersion < oldVersion) {
       code = "ledger-version-regression";
-    } else if (contentChanged && newVersion === oldVersion) {
+    } else if (contentChanged && newVersion === oldVersion && sameVersionChangeAccepted(oldDoc, newDoc, docsLineageChanged) === null) {
       code = "ledger-content-without-version-bump";
     } else if (!contentChanged && newVersion > oldVersion) {
       code = "ledger-version-without-content-change";
