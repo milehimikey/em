@@ -743,7 +743,7 @@ re-parsing `slices/*.md` themselves. It serialises the parse em already does —
 re-parsed ad hoc. Whole model only; it does not combine with `--slice` (that is a usage error).
 Refuses on errors, same gate as a full export.
 
-It carries its **own schema version**, `schemaVersion: "1.0"` (the `DOC_EXPORT_SCHEMA_VERSION`
+It carries its **own schema version**, `schemaVersion: "1.1"` (the `DOC_EXPORT_SCHEMA_VERSION`
 constant), independent of the model export's `schemaVersion` above: the doc-structure shape
 evolves on its own cadence, and a plain `em export` stays byte-for-byte unchanged. The authored
 markdown body still never appears in a plain export; here the rendered HTML is opt-in via
@@ -751,7 +751,7 @@ markdown body still never appears in a plain export; here the rendered HTML is o
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "1.1",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "source": { "path": "model.em", "sha256": "…" },
   "model": {
@@ -772,7 +772,8 @@ markdown body still never appears in a plain export; here the rendered HTML is o
         "invariants": [ { "id": "INV-CHK-1", "text": "the order total must be positive", "source": "model" } ],
         "scenarios": [ { "title": "Happy path", "given": [ "…" ], "when": [ "…" ], "then": [ "…" ] } ],
         "errorFlows": [ "Submitting the same basket twice records one order." ],
-        "openQuestions": [ { "text": "Should tax be included?", "checked": false, "deferredToVersion": null } ]
+        "openQuestions": [ { "text": "Should tax be included?", "checked": false, "deferredToVersion": null } ],
+        "sections": [ { "heading": "Intent", "class": "prose", "changed": false }, { "heading": "Scenarios (Given / When / Then)", "class": "behaviour", "changed": true } ]
       }
     ]
   },
@@ -806,6 +807,16 @@ markdown body still never appears in a plain export; here the rendered HTML is o
 - `openQuestions` — each `## Open Questions` item as `{ text, checked, deferredToVersion }` —
   `deferredToVersion` is the `v<n>` an `em slice defer` `deferred to v<n>` marker names, else
   `null`; wrapped items join their continuation lines the same way `errorFlows` does.
+- `sections` (schema `1.1`, GH #487) — the doc's authored `##` sections as `{ heading, class,
+  changed }`, in document order (a synthetic `Consumed by` section last — the `- **Consumed by:**`
+  bullets lifted out of the view section — plus, after the current ones, any section recorded at
+  sign-off and since deleted). `class` is `prose` (`Intent`, `Trigger & Actor`, `Dependencies & Read
+  Models Affected`, `Consumed by`) or `behaviour` (everything else, any unrecognised heading
+  included). `changed` is whether the section's text differs from the hash `em slice ratify`
+  recorded in `ratifiedSections:` (same exclusions as `ratifiedHash`: generated regions and Open
+  Questions deferrals); `null` for every section when the doc records none — ratified before
+  1.23.0 and not yet stamped by `em upgrade`'s `ratified-sections` step. `null` (the whole field)
+  when no usable doc is bound. The model export (`em export`) is unchanged.
 - `html` — present on each slice only with `--include-html` (the rendered doc body, `null` when no
   usable doc is bound).
 
@@ -4135,7 +4146,7 @@ the `## Open Questions` heading and its `deferred to v<n>` items are excluded to
 moving the hash; everything else, the region marker lines included, stays signed). A hash recorded
 by 1.17.0–1.18.x (generated regions inside) or before 1.17.0 (the whole body) is still read as
 intact while the body is; `em upgrade`'s `ratified-hash-scope` step re-stamps it, and `sync` and
-`defer` do so on first touch. The same-sign-off re-run (`ratify --again` with the same `--by`/`--on`)
+`defer` do so on first touch. Beside `ratifiedHash:` it records `ratifiedSections:` (GH #487) — a hash per authored `##` section under the same exclusions, so a reader can tell which sections changed since sign-off and whether each is prose or behaviour without the old body; see the [`ratifiedSections` row](slice-doc-schema.md) of the slice-doc schema. The same-sign-off re-run (`ratify --again` with the same `--by`/`--on`)
 reads the hash through the same scope check. Because a ref whose tree does not hold the signed body would
 be meaningless, **ratify refuses a doc with uncommitted changes** — commit the body first — and
 refuses in a repository with no commits. Outside a git work tree the ref is simply omitted; the
@@ -5899,6 +5910,12 @@ The mechanical steps, in this fixed order:
    matches its hash in any scope is listed in the reason (`left alone: <keys>`) and left alone; so is a queued question whose doc
    has already moved past the version it was queued for. Refuses, writing nothing, if any rewrite
    would not match its hash afterwards.
+8a. **`ratified-sections`** (1.23.0, GH #487) — stamps `ratifiedSections:` (a hash per authored
+   section, written beside `ratifiedHash:`) on every ratified doc that has none, **while the body
+   still matches `ratifiedHash:`** (any scope) — a record of the body that was signed, not a
+   re-signing: `ratifiedHash`, `ratifiedRef` and the sign-off stay as they are. Until stamped (or
+   re-signed) the doc's sections classify as unknown. A doc whose body no longer matches is listed
+   (`left alone: <keys>`) and not stamped.
 9. **`collapse-alternative-events`** (1.18.0, GH #290 / #278) — adjacent slices that repeat ONE
    command (identical command text, identical `ui`, no `note` or `issue` on the later slices) and
    differ only in the event they record on one context become ONE slice recording `event A | B

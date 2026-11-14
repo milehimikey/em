@@ -22,7 +22,7 @@
 //                  status moves — the exit path for a doc stuck in a state that no longer exists.
 //  - `draft`/`reviewed` refuse: the next version is already open; just edit it.
 //
-// Sign-off keys cleared: `ratifiedBy`/`ratifiedOn`/`ratifiedRef`/`ratifiedHash` (MIL-165/284),
+// Sign-off keys cleared: `ratifiedBy`/`ratifiedOn`/`ratifiedRef`/`ratifiedHash`/`ratifiedSections` (MIL-165/284, GH #487),
 // `reviewedBy`/`reviewedOn` (MIL-201), `meaningConfirmed`/`contractChange` (MIL-238) — every one
 // describes the version being left behind. `implementedIn:`, the `shipped*` keys and the
 // `conformed*` keys stay: they describe the version that shipped, which is still the version in
@@ -65,6 +65,7 @@ export const SIGN_OFF_KEYS: readonly string[] = [
   "reviewSkipped",
   "ratifiedRef",
   "ratifiedHash",
+  "ratifiedSections",
   "reviewedBy",
   "reviewedOn",
   ...MEANING_CONFIRMATION_KEYS,

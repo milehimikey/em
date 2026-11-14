@@ -60,7 +60,8 @@ import {
 import { findSpecifyRoot, locateConstitution } from "./status.js";
 import { scaffoldConstitution, scaffoldStateFile } from "../templates.js";
 import { loadStateFile, parseState, setEmVersion, ensureOptionalBullets, resolveStateFilePath } from "./stateFile.js";
-import { fieldLineRegex, normalizeFieldValue, locateFrontmatterInner, replaceFieldValue } from "./frontmatterSurgery.js";
+import { fieldLineRegex, normalizeFieldValue, locateFrontmatterInner, replaceFieldValue, insertLineAfterField } from "./frontmatterSurgery.js";
+import { ratifiedSectionsValue, recordedSectionHashes } from "../catalog/sectionSignature.js";
 import { isOldHashScope, parseSliceDoc, ratifiedHashScope, RatifiedHashScope, sliceDocBodyHash } from "../catalog/sliceDoc.js";
 import { QueuedItem } from "../catalog/deferQueue.js";
 import { applyDeferOrAppend, drainQueueInState, finishSignedDocEdit, isSignedDoc, readQueue, rewriteParkingLotFragments } from "./defer.js";
@@ -109,7 +110,7 @@ export interface StepDetection {
 
 export type StepApplyOutcome = { ok: true; changedFiles: string[]; notes?: string[] } | { ok: false; message: string };
 
-export type UpgradeStepId = "skill-bundle" | "skill-plugin" | "reaction-shape" | "state-file" | "ci-block" | "api-contract-missing" | "constitution" | "ratified-signoff" | "ratified-hash-scope" | "collapse-alternative-events" | "fold-continuations" | "view-doc-sources-stale" | "slice-index-stale" | "parking-lot-fragments" | "system-manifest";
+export type UpgradeStepId = "skill-bundle" | "skill-plugin" | "reaction-shape" | "state-file" | "ci-block" | "api-contract-missing" | "constitution" | "ratified-signoff" | "ratified-hash-scope" | "ratified-sections" | "collapse-alternative-events" | "fold-continuations" | "view-doc-sources-stale" | "slice-index-stale" | "parking-lot-fragments" | "system-manifest";
 
 export interface UpgradeStepDef {
   id: UpgradeStepId;
@@ -1177,6 +1178,52 @@ function applySystemManifest(ctx: UpgradeContext): StepApplyOutcome {
   return { ok: true, changedFiles: [...plan.files.map((f) => f.file), loaded.path] };
 }
 
+// ---- Step 7b: ratified-sections (GH #487) — a hash per authored section beside `ratifiedHash`. ----
+// `em slice ratify` (1.23.0) also records `ratifiedSections:`, so a later reader can say WHICH
+// sections moved since sign-off and class them prose or behaviour without the old body. A doc
+// ratified before that has none, and its classification is "unknown, treat as behaviour" until it
+// is re-signed. This step stamps them for every doc whose body still matches its `ratifiedHash`
+// (any scope): the stamp describes the body that was signed, so it is a record, not a re-signing —
+// `ratifiedHash`, `ratifiedRef` and the sign-off are untouched. A doc whose body no longer matches
+// is listed and left alone: stamping it would bless the edit.
+
+function sectionStampCandidates(ctx: UpgradeContext): { stamp: string[]; edited: string[] } {
+  const stamp: string[] = [];
+  const edited: string[] = [];
+  for (const c of hashScopeCandidates(ctx)) {
+    const raw = readFileSync(join(ctx.baseDir, c.path), "utf8");
+    if (recordedSectionHashes(raw) !== null) continue;
+    (c.scope === "mismatch" ? edited : stamp).push(c.key);
+  }
+  return { stamp, edited };
+}
+
+function detectRatifiedSections(ctx: UpgradeContext): StepDetection {
+  const { stamp, edited } = sectionStampCandidates(ctx);
+  const left = edited.length > 0 ? `left alone: ${edited.join(", ")} — body no longer matches ratifiedHash (revert, or em slice revise and re-ratify)` : null;
+  if (stamp.length === 0) {
+    return { applicable: false, reason: `every ratified doc whose body is intact records its section hashes${left ? `; ${left}` : ""}` };
+  }
+  const parts = [`${stamp.length} ratified doc(s) record no section hashes: ${stamp.join(", ")} — em upgrade will stamp ratifiedSections: from the body (matches ratifiedHash; a record, not a re-signing)`];
+  if (left) parts.push(left);
+  return { applicable: true, reason: parts.join("; ") };
+}
+
+function applyRatifiedSections(ctx: UpgradeContext): StepApplyOutcome {
+  const keys = new Set(sectionStampCandidates(ctx).stamp);
+  const writes: Array<{ file: string; text: string }> = [];
+  for (const c of hashScopeCandidates(ctx)) {
+    if (!keys.has(c.key)) continue;
+    const file = join(ctx.baseDir, c.path);
+    const raw = readFileSync(file, "utf8");
+    const next = insertLineAfterField(raw, "ratifiedHash", `ratifiedSections: ${ratifiedSectionsValue(raw)}`);
+    if (next === null) return { ok: false, message: `${c.path}: could not locate ratifiedHash: in the frontmatter` };
+    writes.push({ file, text: next });
+  }
+  for (const w of writes) writeFileSync(w.file, w.text, "utf8");
+  return { ok: true, changedFiles: writes.map((w) => w.file) };
+}
+
 export const UPGRADE_STEPS: readonly UpgradeStepDef[] = [
   { id: "skill-plugin", sinceVersion: "1.14.0", detect: detectSkillPlugin, apply: applySkillPlugin },
   { id: "skill-bundle", sinceVersion: "1.7.0", detect: detectSkillBundle, apply: applySkillBundle },
@@ -1187,6 +1234,7 @@ export const UPGRADE_STEPS: readonly UpgradeStepDef[] = [
   { id: "constitution", sinceVersion: "1.11.0", detect: detectConstitution, apply: applyConstitution },
   { id: "ratified-signoff", sinceVersion: "1.14.0", detect: detectRatifiedSignoff, apply: applyRatifiedSignoff },
   { id: "ratified-hash-scope", sinceVersion: "1.19.0", detect: detectRatifiedHashScope, apply: applyRatifiedHashScope },
+  { id: "ratified-sections", sinceVersion: "1.23.0", detect: detectRatifiedSections, apply: applyRatifiedSections },
   { id: "collapse-alternative-events", sinceVersion: "1.18.0", detect: detectCollapseAlternativeEvents, apply: applyCollapseAlternativeEvents },
   { id: "fold-continuations", sinceVersion: "1.18.0", detect: detectFoldContinuations, apply: applyFoldContinuations, optedIn: (c) => c.foldContinuations === true || c.toSugar === true },
   { id: "view-doc-sources-stale", sinceVersion: "1.18.0", detect: detectViewDocSourcesStale, apply: applyViewDocSourcesStale },

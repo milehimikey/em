@@ -225,11 +225,11 @@ describe("em export (CLI)", () => {
 });
 
 describe("em export --doc-json (CLI, GH #401)", () => {
-  it("emits the structured doc export under its own schema version (1.0), not the model schema", () => {
+  it("emits the structured doc export under its own schema version (1.1), not the model schema", () => {
     const r = em(["export", "clean.em", "--doc-json"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if warning text leaked into stdout
-    expect(doc.schemaVersion).toBe("1.0");
+    expect(doc.schemaVersion).toBe("1.1");
     expect(doc.model.invariants).toBeDefined(); // the model-level invariant catalog
     expect(doc.model.slices[0]).toHaveProperty("errorFlows");
     expect(doc.model.slices[0]).toHaveProperty("openQuestions");
@@ -6058,7 +6058,7 @@ describe("API-first gate (CLI, MIL-238)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("ratified: slices/place-order.md (ratifiedBy: Alex Rivera, ratifiedOn: 2026-10-07, meaningConfirmed: true)");
     // MIL-284: the body hash sits between ratifiedOn and the confirmation (no ref: the fixture is not a git repo).
-    expect(readFileSync(join(dir, "slices", "place-order.md"), "utf8")).toMatch(/ratifiedOn: 2026-10-07\nratifiedHash: sha256:[0-9a-f]{64}\nmeaningConfirmed: true\n/);
+    expect(readFileSync(join(dir, "slices", "place-order.md"), "utf8")).toMatch(/ratifiedOn: 2026-10-07\nratifiedHash: sha256:[0-9a-f]{64}\nratifiedSections: .+\nmeaningConfirmed: true\n/);
     const again = em(["slice", "ratify", "shop.em", "place-order", "--by", "Alex Rivera", "--on", "2026-10-07", "--meaning-unchanged"], dir);
     expect(again.stdout).toContain("already ratified (no-op): slices/place-order.md");
     const after = em(["status", "shop.em", "--json"], dir);

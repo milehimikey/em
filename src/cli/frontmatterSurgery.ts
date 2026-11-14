@@ -56,6 +56,20 @@ export function replaceFieldValue(markdown: string, key: string, value: string):
   return markdown.slice(0, at) + m[1] + value + markdown.slice(at + m[0].length);
 }
 
+/** GH #487: inserts a new `line` (no EOL) directly after the column-0 `afterKey:` line, in the
+ *  file's own EOL style, touching nothing else. `null` when there is no frontmatter or no such
+ *  line — the caller decides whether that is a refusal. */
+export function insertLineAfterField(markdown: string, afterKey: string, line: string): string | null {
+  const range = locateFrontmatterInner(markdown);
+  if (!range) return null;
+  const inner = markdown.slice(range.innerStart, range.innerEnd);
+  const m = fieldLineRegex(afterKey).exec(inner);
+  if (!m) return null;
+  const end = range.innerStart + m.index + m[0].length;
+  const eol = markdown.startsWith("\r\n", end) ? "\r\n" : "\n";
+  return markdown.slice(0, end) + eol + line + markdown.slice(end);
+}
+
 /** Byte offsets of the frontmatter block's inner lines (between the two `---` fences), located
  *  by walking lines with `indexOf` rather than `split(/\r?\n/)` — a rewrite can't afford the
  *  line-ending normalization a split/join would silently perform across the WHOLE file the
