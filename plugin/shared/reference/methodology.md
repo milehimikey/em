@@ -130,7 +130,7 @@ command** — it never records an event directly.
     event E @Context
   }
   slice "Todo — done" {
-    view Todo again from "E"   # every event needs a reader; here it clears the to-do list
+    view Todo again from "E"   # clears the to-do list: the outcome is read back by the SAME view
     ui Work Board @Persona     # ...and every read model needs a consumer
   }
   ```
@@ -138,13 +138,23 @@ command** — it never records an event directly.
   happens to live in the processor's own slice now because the command does. A processor with no
   command in its slice (and no explicit arrow to one) is a validation warning: a decision the
   system never acts on. Forgetting the third slice leaves `E` unread, which is also a warning.
+- **Clearing the list is a rule of the pattern.** Every outcome event that finishes the work is
+  read back by a later `view <List> again from "<Outcome>"` instance of the same to-do list, or
+  the processor picks the item up again. This is separate from "every event needs a reader": a
+  different view reading the outcome (`Receipts`, a status board) satisfies the reader rule and
+  leaves the list uncleared, and `em validate` does not catch it. The automation's own outcome
+  events always go on a later `again` instance, never in `updates from` on the first instance —
+  they happen after the list's slice, so that is a `time flows left to right` error.
+  `updates from` is for housekeeping events that happen before the list's slice. Ask what the
+  command does when the processor sees an item twice before the list updates, and record the
+  answer as an invariant with a scenario.
 - **Naming:** name the read model after the pending work — `Payments To Process`,
   `Orders To Fulfill`, `Pending Approvals` — never after the triggering event. The event is what
   happened; the view is what's left to do. Reusing the event's name also collides in the shared
   element namespace: `from` references then resolve by element kind, and `em validate` flags the
   duplicated name.
 - Socratic prompts: *"What should happen without a human? What condition triggers it? What work
-  list does the processor watch? What command does it fire? What if it fails or retries?"*
+  list does the processor watch? What command does it fire? Which event takes the item off the list? What if it fails or retries?"*
 - **Outcomes are events of the SAME slice.** Success, failure, retry-scheduled and timeout are
   outcome events of the one command (`Fulfilment Succeeded` / `Fulfilment Failed` / `Fulfilment
   Retry Scheduled`), not sibling slices per control-flow branch (1.18.0 adds the
