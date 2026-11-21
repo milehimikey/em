@@ -2831,7 +2831,7 @@ PR compiles, tests and merges on its own. Holds are recomputed on every run. Per
 | `base` | Always `main` |
 | `planHeld` | The plan's own computed hold (below), or `null`. Never written to the Ledger |
 | `held` | `planHeld`, else `human` when the Ledger records `set --state held`, else `null` |
-| `state`, `stateInferred` | The Ledger state; `merged` with `stateInferred: true` when the doc has reached `implemented` |
+| `state`, `stateInferred` | The Ledger state; `merged` with `stateInferred: true` for a `planned` slice whose doc records a shipped version and has no later version waiting at `ready-to-implement` (GH #519) |
 | `tracking` | The ticket key this slice's PR cites: the slice doc's own `tracking:` when present, else the engagement's; `null` when neither is set |
 | `prTitle` | The exact PR title for this slice (GH #334): the engagement's `prTitle` template with `{key}`/`{slice}` resolved, or the default (`<key>: <slice name>`, or `<slice name>` without a key). The lead hands it to the implementer verbatim |
 
@@ -3092,7 +3092,9 @@ same list is a no-op (`no change: context is already [...] (<path>)`).
 ### `em engagement status <file> <slug> [--json]`
 
 The Ledger joined with each doc's current status: per slice `pattern`, `docStatus`, `state`
-(`merged` inferred when the doc is `implemented`), `stateInferred`, `heldBy`, `branch`, `base`,
+(`merged` inferred for a `planned` slice whose doc records a shipped version, unless a later
+version is `ready-to-implement` and waiting to be built; any other recorded state is reported as
+recorded), `stateInferred`, `heldBy`, `branch`, `base`,
 `pr`, `tracking` (as in `plan`); the engagement-level `tracking`; `counts` per state; and `closable` (every slice is `merged` or `gap`). `--json` prints
 `engagementStatusSchemaVersion: "1.1"`; the MCP `engagement_status` tool returns the same
 document.
