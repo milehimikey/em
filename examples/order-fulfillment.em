@@ -70,3 +70,9 @@ slice "Show Receipt" {
   view Receipts from "Payment Captured"
   ui Receipt Screen @Customer
 }
+
+# --- The to-do list again: the outcome event takes the captured payment off it ---
+slice "Payments To Process — captured" {
+  view Payments To Process again from "Payment Captured"
+  ui Payments Queue @Manager
+}

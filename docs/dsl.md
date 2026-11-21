@@ -205,6 +205,12 @@ view Overdue Loans To Notify
   same shape as `from`; `from` keeps the union. The resolved connection is in `model.edges`
   with `source: "updates-from"`.
 
+`updates from` only takes events that happen **before** the view's slice. An automation's own
+outcome event happens after the to-do list the processor watches, so the list reads it on a later
+`view <List> again from "<Outcome>"` instance instead; naming it in `updates from` on the first
+instance is a `time flows left to right` error. See
+[patterns.md](patterns.md#clearing-the-list).
+
 ### One event recorded by several commands
 
 Two commands may record the same event. Declare the event in each slice, bare, with the same

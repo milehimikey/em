@@ -123,7 +123,9 @@ originating ticket/conversation link here if one exists.}}
 read model and the triggering condition. For translations, state the trigger form: externally
 triggered (the external system/source feeding us) or internally triggered (the read model whose
 state we react to). Either way, name the command this reaction triggers — reactions never record
-an event directly.}}
+an event directly. For automations, also say what the command does when the processor sees the
+same item twice before the to-do list updates (usually a no-op: give it an invariant and a
+scenario below).}}
 
 ## Command / Input
 <!-- GENERATED region (MIL-266): the table between the markers is written from the model —
@@ -184,6 +186,7 @@ an event directly.}}
 | {{field}} | {{Type}} | {{which event field it's copied from, or `Derived: <rule>`}} |
 <!-- GENERATED:em-slice-view:end -->
 - **Consumed by:** {{which UI screen (or API-caller persona), or reaction}}
+- **What removes a row:** {{the event(s) that take a row off this view, or "nothing — rows are kept". For a to-do list a processor watches: the processor's outcome event(s), read by a later `view <List> again` instance}}
 <!-- "Consumed by" is required, not optional. A read model nothing displays or watches is
      information projected out of the system and then dropped, and `em validate` warns. Every
      instance of a repeated view needs its own consumer, not just the last one. -->

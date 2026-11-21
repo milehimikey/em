@@ -3,7 +3,7 @@
 A worked sample project for `em` — a real, complete project directory (not just a bare
 `.em` file) walking through the tool end to end. The business process itself is
 deliberately simple: a customer browses a catalog, places an order, checks out, the system
-automatically captures payment from a gateway, and a receipt appears. Seven slices, three of
+automatically captures payment from a gateway, and a receipt appears. Eight slices, three of
 the four Event Modeling patterns (State Change, State View, Automation — see
 [docs/patterns.md](https://github.com/milehimikey/em/blob/main/docs/patterns.md) for the
 fourth, Translation). See [docs/tutorial.md](https://github.com/milehimikey/em/blob/main/docs/tutorial.md)
@@ -19,9 +19,9 @@ than just reading the model:
 2. **The model file**, `order-fulfillment.em` — see `tag`/`renamed from` in
    [examples/event-tags.em](../event-tags.em)/[examples/renames.em](../renames.em) for two
    DSL features this particular model doesn't happen to use.
-3. **The slice docs**, `slices/*.md` — only 4 of the 7 slices are documented here
+3. **The slice docs**, `slices/*.md` — only 4 of the 8 slices are documented here
    (**Browse Catalog**, **Checkout**, **View Open Orders**, **Capture Payment** — two State
-   Changes plus one of each remaining pattern), not all 7. Notice their statuses differ on
+   Changes plus one of each remaining pattern), not all 8. Notice their statuses differ on
    purpose: `browse-catalog` and `checkout` are `ready-to-implement` with every Open
    Question resolved (`checkout` has none to begin with); `view-open-orders` and
    `capture-payment` are only `reviewed`, each with a real, unresolved Open Question the doc
@@ -101,6 +101,7 @@ never connected to one another.
 | 5 | Payments To Process | State View | no doc yet | — | — | — | — | — | — | — |
 | 6 | Capture Payment | Automation | reviewed | — | — | — | — | — | — | [slices/capture-payment.md](slices/capture-payment.md) |
 | 7 | Show Receipt | State View | no doc yet | — | — | — | — | — | — | — |
+| 8 | Payments To Process — captured | State View | continuation of `payments-to-process` | — | — | — | — | — | — | — |
 <!-- GENERATED:slices:end -->
 
 ## Status

@@ -195,8 +195,30 @@ directly, only a read model does. A `ui` belongs in the slice that displays the 
 instead. A `ui` left in the reaction's slice renders disconnected, with no edge, and
 `em validate` warns on it too.
 
-The third slice is the State View that reads `Payment Captured` — here it's the same to-do
-list, one payment shorter. Without it the event is unread and `em validate` warns.
+### Clearing the list
+
+**Every outcome event that finishes the work must be read back by the to-do list it came from.**
+The third slice above does that: `view Payments To Process again from "Payment Captured"` is the
+same list, one payment shorter. Without it the captured payment stays on the list and the
+processor picks it up again.
+
+This is a rule of the Automation pattern, separate from "every event needs a reader". Any view
+satisfies the reader rule: a `Receipts` view reading `Payment Captured` silences the unread-event
+warning and leaves `Payments To Process` exactly as long as before. `em validate` does not check
+that the list is cleared, so check it by eye: for each processor, each outcome event of its
+command feeds a later instance of the view it watches.
+
+Which clause carries the removal depends on when the event happens:
+
+- **The automation's own outcome events** happen after the list's slice, so they go on a later
+  `view <List> again from "<Outcome>"` instance. Writing them as `updates from` on the first
+  instance is an error (`time flows left to right`).
+- **Housekeeping events that happen before the list's slice** (an order cancelled before it is
+  fulfilled, an address corrected) go in `updates from` on the instance that follows them. See
+  [dsl.md](dsl.md#updates-from).
+
+A processor can see an item twice before the list catches up. Say in the slice doc what the
+command does then: usually a no-op, stated as an invariant with its own scenario.
 
 ### Outcomes of one reaction: one slice
 
@@ -226,19 +248,20 @@ slice "Fulfil Order" {
   event Fulfilment Succeeded | Fulfilment Failed | Fulfilment Retry Scheduled @Fulfilment
 }
 
-slice "Orders To Fulfil — retry" {
-  view Orders To Fulfil again from "Fulfilment Retry Scheduled"
-  ui Retry Queue @Ops
+slice "Orders To Fulfil — after an attempt" {
+  view Orders To Fulfil again from "Fulfilment Succeeded", "Fulfilment Failed", "Fulfilment Retry Scheduled"
+  ui Fulfilment Queue @Ops
 }
 
 slice "Fulfilment Status" {
-  view Fulfilment Status from "Fulfilment Succeeded", "Fulfilment Failed", "Fulfilment Retry Scheduled"
+  view Fulfilment Status from "Order Paid", "Fulfilment Succeeded", "Fulfilment Failed", "Fulfilment Retry Scheduled"
   ui Fulfilment Board @Ops
 }
 ```
 
-The retry fires because the processor's to-do list reads the retry-scheduled event: the view
-reappears with `view Orders To Fulfil again from "Fulfilment Retry Scheduled"`, so the **same**
+The to-do list reads all three outcomes back ([Clearing the list](#clearing-the-list)).
+`Fulfilment Succeeded` and `Fulfilment Failed` finish the work, so each takes the order off the
+list. `Fulfilment Retry Scheduled` keeps it there with its next attempt time, so the **same**
 reaction picks the order up again. Add a new slice only when a **different actor or a different
 trigger** is involved: a human override of a failed fulfilment, or a scheduled timer that is
 itself modelled as a reaction on a different view, has its own trigger and so its own slice
