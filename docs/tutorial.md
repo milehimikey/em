@@ -9,7 +9,7 @@ fields, linked notes, and open questions. Budget about twenty minutes.
 
 ![The finished order-fulfillment event model](../examples/order-fulfillment.svg)
 
-Seven slices telling one story: a customer places an order, checks out, a payment gateway
+Eight slices telling one story: a customer places an order, checks out, a payment gateway
 captures the payment automatically, and a receipt appears. It exercises three of the
 [four patterns](patterns.md) — State Change, State View, and Automation. (The fourth,
 Translation, works the same way as Automation; patterns.md covers it.)
@@ -207,7 +207,23 @@ slice "Show Receipt" {
 }
 ```
 
-Seven slices. The whole story now reads left to right across the diagram, and
+The warning is gone, but the automation is not finished. The captured payment is still on
+"Payments To Process", so the gateway would pick it up again. The receipt reads the event; it
+does not take anything off the list. The list itself has to read "Payment Captured", in a later
+instance of the same view:
+
+```em
+slice "Payments To Process — captured" {
+  view Payments To Process again from "Payment Captured"
+  ui Payments Queue @Manager
+}
+```
+
+`again` says this is the same read model, further along the timeline: the list as it stands once
+the payment is captured, one payment shorter. Every automation needs this step, and `em validate`
+does not ask for it, because the receipt already satisfied "every event needs a read model".
+
+Eight slices. The whole story now reads left to right across the diagram, and
 `em validate` has nothing to say about it.
 
 ## 7. Add fields
@@ -373,6 +389,11 @@ slice "Capture Payment" {
 slice "Show Receipt" {
   view Receipts from "Payment Captured"
   ui Receipt Screen @Customer
+}
+
+slice "Payments To Process — captured" {
+  view Payments To Process again from "Payment Captured"
+  ui Payments Queue @Manager
 }
 ```
 

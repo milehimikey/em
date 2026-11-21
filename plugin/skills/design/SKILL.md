@@ -102,7 +102,14 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    **trigger / housekeeping split** on what is left (*which event is the reason this row appears?*
    that one stays in `from`; every event that only keeps a row current or removes it moves to
    `updates from` — the view still reads it, the diagram no longer draws it; a to-do list with more
-   than one or two inbound arrows is missing this split), the **continuation check** per `view X
+   than one or two inbound arrows is missing this split; one exception: an automation's own
+   outcome event happens after its to-do list's slice, so it goes on a later `view <List> again
+   from "<Outcome>"` instance, and `updates from` there is a `time flows left to right` error),
+   the **list-cleared check** per processor (does every outcome event that finishes the work feed
+   a later instance of the view the processor watches? a different view reading the outcome does
+   not clear the list, and no lint catches it — see
+   `${CLAUDE_PLUGIN_ROOT}/shared/reference/methodology.md`, "Clearing the list"), the
+   **continuation check** per `view X
    again` (it names only the events that changed the view since the previous instance, never the
    first instance's list again), and the
    **conditional-invariant signal** (invariants or fields that apply only "if `<field>` is set"
