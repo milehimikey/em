@@ -19,7 +19,7 @@ closed engagement refuses every `set`.
 | `validating` | step 4.1 (with `--pr <url>` the first time) | `em-validator` is running on the PR | `review` on PASS, `building` on FAIL |
 | `review` | step 4.3 | `em-reviewer` and `em-critic` are reading the PR | `awaiting-merge`, or `building` on blocker/major findings |
 | `awaiting-merge` | step 5 | Handed to the human with its evidence bundle | `merged` |
-| `merged` | step 6.3, after the human merges (also inferred, never written, once the doc reads `status: implemented`) | Terminal | — |
+| `merged` | step 6.3, after the human merges (also inferred, never written, for a `planned` slice whose doc records a shipped version and has no later version waiting at `ready-to-implement`) | Terminal | — |
 | `held` | only when the human asks to park a slice (`heldBy: human`) | A human hold; the plan's own computed holds are separate (`planHeld`) and never written | `planned` when the human releases it |
 | `gap` | step 7 | The implementer stopped on a question the doc must answer | Stays `gap`; the slice comes back in a later engagement once its doc is re-ratified |
 

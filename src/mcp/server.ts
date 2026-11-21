@@ -1316,7 +1316,7 @@ export function createServer(): McpServer {
       title: "Ledger status of an engagement",
       description:
         "Return the same JSON document `em engagement status <file> <slug> --json` prints " +
-        "(MIL-268): each slice's Ledger state (merged inferred when its doc is implemented), " +
+        "(MIL-268): each slice's Ledger state (merged inferred for a planned slice whose doc has shipped and has no later version ready to build), " +
         "branch/base/pr, current doc status, per-state counts, and whether the engagement is " +
         "closable (every slice merged or gap). Read-only — the Ledger is written only by " +
         "`em engagement set`.",

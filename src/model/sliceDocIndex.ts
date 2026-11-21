@@ -87,6 +87,10 @@ export interface SliceQueryDoc {
   /** MIL-283: a version of this slice has shipped (`shippedRecordOf`) — what the readers that used
    *  to test `status === "implemented"` read now; false whenever `found` is false. */
   shipped: boolean;
+  /** GH #519: a later version than the shipped one is ratified and waiting to be built
+   *  (`status: ready-to-implement`, `version:` above the shipped version). The engagement Ledger
+   *  does not infer `merged` for such a slice. False whenever `shipped` is false. */
+  openRevision: boolean;
   /** GH #241: the doc's own frontmatter `tracking:` (null when absent or no usable doc). */
   tracking: string | null;
   driftSignal: DriftSignalKind | null;
@@ -134,25 +138,28 @@ export function joinSliceDocFast(
       const originatingDoc = joinSliceDocFast(model, refs, originatingSlice, continuation.sliceKey, docsByKey);
       return { ...originatingDoc, continuationOf: continuation.sliceKey };
     }
-    return { found: false, path, reason: "no-doc-bound", status: null, implementedIn: null, shipped: false, tracking: null, driftSignal: null, body: null, continuationOf: null };
+    return { found: false, path, reason: "no-doc-bound", status: null, implementedIn: null, shipped: false, openRevision: false, tracking: null, driftSignal: null, body: null, continuationOf: null };
   }
 
   const doc = docsByKey.get(sliceKey);
-  if (!doc) return { found: false, path, reason: "binding-missing-file", status: null, implementedIn: null, shipped: false, tracking: null, driftSignal: null, body: null, continuationOf: null };
+  if (!doc) return { found: false, path, reason: "binding-missing-file", status: null, implementedIn: null, shipped: false, openRevision: false, tracking: null, driftSignal: null, body: null, continuationOf: null };
   if (!hasUsableFrontmatter(doc)) {
-    return { found: true, path, reason: "frontmatter-invalid", status: null, implementedIn: null, shipped: false, tracking: null, driftSignal: null, body: null, continuationOf: null };
+    return { found: true, path, reason: "frontmatter-invalid", status: null, implementedIn: null, shipped: false, openRevision: false, tracking: null, driftSignal: null, body: null, continuationOf: null };
   }
   return foundDoc(path, doc);
 }
 
 function foundDoc(path: string, doc: SliceDoc): SliceQueryDoc {
+  const shipped = shippedRecordOf(doc);
   return {
     found: true,
     path,
     reason: null,
     status: doc.status,
     implementedIn: doc.implementedIn,
-    shipped: shippedRecordOf(doc) !== null,
+    shipped: shipped !== null,
+    openRevision:
+      shipped !== null && doc.status === "ready-to-implement" && shipped.version !== null && doc.version !== null && doc.version > shipped.version,
     tracking: doc.tracking,
     driftSignal: classifyImplementationDrift(doc),
     body: doc.body,
