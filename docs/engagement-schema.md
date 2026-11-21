@@ -74,8 +74,11 @@ are double-quoted, so a URL or a branch name containing `:` stays valid YAML.
 | `pr` | string or `null` | The PR URL. |
 | `heldBy` | `human` (optional) | Present only while `state` is `held` through `em engagement set --state held`. |
 
-`merged` is also *inferred*, without being written, when the slice doc reaches
-`status: implemented`. `plan` and `status` report that as `state: merged`, `stateInferred: true`.
+`merged` is also *inferred*, without being written, for a slice the Ledger still records as
+`planned` whose doc records a shipped version. `plan` and `status` report that as
+`state: merged`, `stateInferred: true`. Two cases are never inferred (GH #519): a doc that is
+`ready-to-implement` at a version above its shipped one, because that version has not been built,
+and a slice whose recorded state is anything other than `planned`, because a recorded state wins.
 The plan's own computed hold (`not-ready`, `upstream-outside-engagement-unmerged`) is never
 stored here; see
 [`em engagement plan`](cli.md#em-engagement-plan-file-slug---json).

@@ -90,6 +90,9 @@ export interface UnitIndex {
    *  Ledger's inferred `merged` and the outside-upstream hold read, in place of
    *  `docStatus === "implemented"` (a shipped slice can be `draft` again). */
   docShipped: Map<string, boolean>;
+  /** GH #519: the unit's doc is `ready-to-implement` at a version above its shipped one — a
+   *  ratified revision waiting to be built, so the Ledger does not infer `merged` for it. */
+  docOpenRevision: Map<string, boolean>;
   /** GH #241: the unit doc's own `tracking:` (null: absent / no doc). */
   docTracking: Map<string, string | null>;
 }
@@ -117,6 +120,7 @@ export function buildUnitIndex(model: NormalizedModel, refs: RefsResult, baseDir
   const pattern = new Map<string, string>();
   const docStatus = new Map<string, string | null>();
   const docShipped = new Map<string, boolean>();
+  const docOpenRevision = new Map<string, boolean>();
   const docTracking = new Map<string, string | null>();
   for (let i = 0; i < keys.length; i++) {
     if (unitOfSlice[i] !== keys[i]) continue;
@@ -126,9 +130,10 @@ export function buildUnitIndex(model: NormalizedModel, refs: RefsResult, baseDir
     const join = joinSliceDocFast(model, refs, model.slices[i], keys[i], docsByKey);
     docStatus.set(keys[i], join.found && join.reason === null ? join.status : null);
     docShipped.set(keys[i], join.found && join.reason === null && join.shipped);
+    docOpenRevision.set(keys[i], join.found && join.reason === null && join.openRevision);
     docTracking.set(keys[i], join.found && join.reason === null ? join.tracking : null);
   }
-  return { unitOfSlice, units, sliceIndexOf, pattern, docStatus, docShipped, docTracking };
+  return { unitOfSlice, units, sliceIndexOf, pattern, docStatus, docShipped, docOpenRevision, docTracking };
 }
 
 /** Unit of one element: an `again` view instance belongs to its originating declaration. Exported
@@ -282,9 +287,6 @@ export function ledgerFacts(idx: UnitIndex, keys: string[]): Map<string, LedgerR
 
 // ---- the Ledger join (status, plan) ----
 
-/** R23: `merged` is also inferred (read-only) when a version of the slice has shipped — MIL-283:
- *  the shipped record (`docShipped`), not `status === "implemented"`, since a shipped slice can be
- *  `draft` again while the engagement that shipped it is still being closed out. */
 /** GH #241: the ticket key a slice's PR cites — the slice doc's own `tracking:` when present,
  *  else the engagement's; null when neither is set. */
 export function effectiveTracking(sliceTracking: string | null, engagementTracking: string | null): string | null {
@@ -301,8 +303,13 @@ export function resolvePrTitle(template: string | null, tracking: string | null,
   return fill((template ?? DEFAULT_PR_TITLE).split("{key}").join(tracking));
 }
 
-export function effectiveState(entry: EngagementSliceEntry, docShipped: boolean): { state: LedgerState; stateInferred: boolean } {
-  if (entry.state !== "merged" && docShipped) return { state: "merged", stateInferred: true };
+/** R23: the state `plan` and `status` report for one Ledger entry. `merged` is inferred, never
+ *  written, for a slice the engagement has not touched (`planned`) whose doc records a shipped
+ *  version (MIL-283: the shipped record, not `status`, since a shipped slice can be `draft` again). GH #519: any other recorded state wins over the
+ *  inference, and nothing is inferred while a later version is ratified and waiting to be built
+ *  (`openRevision`) — that version has not been built. */
+export function effectiveState(entry: EngagementSliceEntry, docShipped: boolean, openRevision: boolean): { state: LedgerState; stateInferred: boolean } {
+  if (entry.state === "planned" && docShipped && !openRevision) return { state: "merged", stateInferred: true };
   return { state: entry.state, stateInferred: false };
 }
 
@@ -339,7 +346,7 @@ export function buildEngagementStatus(file: string, engagementFile: string, eng:
   const counts = Object.fromEntries(LEDGER_STATES.map((s) => [s, 0])) as Record<LedgerState, number>;
   const slices = eng.slices.map((e) => {
     const docStatus = idx.docStatus.get(e.key) ?? null;
-    const { state, stateInferred } = effectiveState(e, idx.docShipped.get(e.key) ?? false);
+    const { state, stateInferred } = effectiveState(e, idx.docShipped.get(e.key) ?? false, idx.docOpenRevision.get(e.key) ?? false);
     counts[state]++;
     return {
       key: e.key,
@@ -647,7 +654,7 @@ export function buildEngagementPlan(input: EngagementModelInput, engagementFile:
   const slices: EngagementPlanSlice[] = members.map((key) => {
     const entry = entryOf.get(key)!;
     const docStatus = idx.docStatus.get(key) ?? null;
-    const { state, stateInferred } = effectiveState(entry, idx.docShipped.get(key) ?? false);
+    const { state, stateInferred } = effectiveState(entry, idx.docShipped.get(key) ?? false, idx.docOpenRevision.get(key) ?? false);
     const { scoped, ready } = computeSliceReadiness(input.model, input.refs, input.baseDir, key, input.contract, input.allDiagnostics);
     const upstreams = inPreds.get(key)!;
     // In-engagement upstreams impose no hold and no base (MIL-280): they only set the level.

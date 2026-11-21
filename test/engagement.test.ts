@@ -886,6 +886,49 @@ describe("engagement reads the shipped record, not the working status (MIL-283)"
   });
 });
 
+// GH #519: a ratified revision over a shipped version is not built yet, and a recorded state wins.
+describe("inferred merged yields to an open revision and to the Ledger (GH #519)", () => {
+  const SHIPPED_V1_READY_V2 = "status: ready-to-implement\nversion: 2\nimplementedIn: https://example.test/pr/4\nshippedVersion: 1";
+  const status = (file: string, slug: string) => {
+    const r = engagementStatusFor(input(file), slug);
+    if (!r.ok) throw new Error(r.message);
+    return r.status;
+  };
+  function reviseOwn(file: string, frontmatter: string): void {
+    const own = join(dirname(file), "slices", "damage-reports.md");
+    writeFileSync(own, readFileSync(own, "utf8").replace("status: ready-to-implement\nversion: 1", frontmatter));
+  }
+  function setup(frontmatter: string): string {
+    const { file } = writeLendingFixture(dir);
+    create(file, "loans", { kind: "slices", keys: ["damage-reports"] });
+    reviseOwn(file, frontmatter);
+    return file;
+  }
+
+  it("a slice ready-to-implement at a version above its shipped one stays planned, in plan and status", () => {
+    const file = setup(SHIPPED_V1_READY_V2);
+    expect(plan(file, "loans").slices[0]).toMatchObject({ state: "planned", stateInferred: false, docStatus: "ready-to-implement" });
+    expect(status(file, "loans")).toMatchObject({ closable: false, counts: { planned: 1, merged: 0 } });
+    expect(status(file, "loans").slices[0]).toMatchObject({ state: "planned", stateInferred: false });
+  });
+
+  it("once that version ships the slice is inferred merged again", () => {
+    const file = setup("status: implemented\nversion: 2\nimplementedIn: https://example.test/pr/5\nshippedVersion: 2");
+    expect(plan(file, "loans").slices[0]).toMatchObject({ state: "merged", stateInferred: true });
+  });
+
+  it("a state recorded in the Ledger wins over the inference", () => {
+    // Shipped v1 with a draft v2: inferred merged while the Ledger still reads `planned` (MIL-283).
+    const file = setup("status: draft\nversion: 2\nimplementedIn: https://example.test/pr/4\nshippedVersion: 1");
+    expect(plan(file, "loans").slices[0]).toMatchObject({ state: "merged", stateInferred: true });
+    for (const state of ["building", "awaiting-merge", "held", "gap"] as const) {
+      expect(set(file, "loans", "damage-reports", state)).toMatchObject({ ok: true, changed: true });
+      expect(plan(file, "loans").slices[0]).toMatchObject({ state, stateInferred: false });
+      expect(status(file, "loans").slices[0]).toMatchObject({ state, stateInferred: false });
+    }
+  });
+});
+
 // GH #239: the plan's pre-flight — the model-wide gaps every parallel implementer would otherwise
 // rediscover on its own, put to the human in one round before fan-out. Advisory: never a hold.
 describe("plan pre-flight (GH #239)", () => {
