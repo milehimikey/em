@@ -674,6 +674,14 @@ The 1.19.1 step: `ci-block` (regenerates the `glossary` job with `--waive-file`)
 
 Update the `@milehimikey/em` dependency (and the plugin pin to `em-1-20-0` / `v1.20.0` on plugin repos, and the mise pin), all together. `em upgrade <model>.em` has no 1.20.0 step and only bumps the `Em version:` line. Re-run `em validate`: `doc-names-unfed-event` warnings backed by a `loops-to` disappear, and the new advisory `view-lookup-source` may surface lookup-shaped view sources — apply the generation rule or waive per [validation.md](validation.md#shape). Everything else is opt-in: the path source form, `--doc-json`, `conform --preview`, inline ratification, `refs --check-order` and the viewer's storyline filter.
 
+## 1.23.1
+
+| What changed for a model repo | Handled by `em upgrade`? |
+|---|---|
+| **`em engagement plan` / `status` infer `merged` more narrowly** (GH #519, [engagement-schema.md](engagement-schema.md)): `merged` is inferred only for a slice the Ledger still records as `planned` whose doc has a shipped record and no later version waiting at `ready-to-implement`. A slice with v1 shipped and v2 ratified now reads `planned`, so a harness builds v2. Any other recorded state (`building`, `validating`, `review`, `awaiting-merge`, `held`, `gap`) is reported as recorded. The engagement file format and the plan/status schema versions are unchanged | no action needed for model repos. **Harness authors:** a slice left at `awaiting-merge` is no longer reported `merged` once its doc ships; record it with `em engagement set … --state merged` (the engagement skill already does). A reader that worked around #519 by ignoring an inferred `merged` on a `ready-to-implement` doc can drop the workaround |
+| **Automation guidance: the outcome event must clear the to-do list** (GH #518, [patterns.md](patterns.md#clearing-the-list)): the methodology reference, the design skill and the slice template in the skill bundle and the plugin now state the rule, name the idiom (a later `view <List> again from "<Outcome>"` instance, not `updates from`), and the template gains a **What removes a row** line and a seen-twice prompt. No validation rule changed: `em validate` does not check that a list is cleared | `skill-bundle` (vendored) / the plugin pin `em-1-23-1`. **Human:** existing models are not flagged; check each processor's outcome events feed a later instance of the view it watches. Existing slice docs keep their shape; the new template line applies to docs scaffolded from 1.23.1 on |
+| **Release note: update the `@milehimikey/em` dependency, then run `em upgrade <model>.em --apply`** — it moves the plugin pin to `em-1-23-1` / `v1.23.1` and the mise pin. No `.em` syntax, export schema or frontmatter change | `plugin-pin`, `mise-pin` |
+
 ## 1.23.0
 
 | What changed for a model repo | Handled by `em upgrade`? |
