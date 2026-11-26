@@ -39,6 +39,14 @@ tell the user to run `em skill sync` (or `em upgrade`).
 Throughout, `<model>.em` is the model file and `<slug>` the engagement's name. Every command
 below is real; run it as written.
 
+**One repository or several.** Sections 1 to 8 are written for a model whose code is in the
+model's own repository: one slice, one worktree, one implementer, one PR. When the model has a
+`code-map.yaml`, a slice's code can be in other repositories, and in more than one. Then
+`em engagement plan --json` carries `units`, and what you cut, dispatch and hand over is a
+**work unit** (one slice's code in one repository), not a slice. Read section 9 before the first
+dispatch whenever the plan has `units`; it says how each step below changes. Without `units`,
+ignore section 9 entirely.
+
 ## 1. Preconditions — STOP on each
 
 Run the shared preconditions first (tool check, bundle currency, locate the model):
@@ -215,6 +223,78 @@ constitution), follow the gap protocol (`reference/engagement.md`):
 3. Report: what merged (PR links), what is awaiting merge, what is held and why, each gap with
    its question, and every unresolved reviewer or critic disagreement.
 
+## 9. Work units: when the plan has `units`
+
+`em engagement plan <model>.em <slug> --json` lists `units` when the model has a `code-map.yaml`.
+Each `kind: "unit"` node is one slice's code in one repository: `id` (`<key>@<repo>`), `partOf`
+(the slice), `repo`, `roots`, `elements`, `branch`, `prTitle`, `marker`, `dependsOn`, `state`.
+Each slice also has one `kind: "close"` node (`close:<key>`), its closing step. `em` publishes
+this graph; you run it. You are the only lead, so you are also where claims live: no unit is
+ever dispatched twice.
+
+Everything in sections 1 to 8 holds, with these changes.
+
+**Preconditions (section 1).**
+
+- Run `em repos check <model>.em`. Every repo that appears in `units[].repo` must be `resolved`.
+  For one that is `missing` or `not a git repo`, STOP and ask the human to check it out beside the
+  model's repository or map it in `.em/repos.local.yaml`. **Never clone, pull or push a
+  repository to make this pass.** Take each repo's path from `em repos check --json`
+  (`repos[].path`) and use that path, as given, everywhere below.
+- The worktree check (1.4) and the foundation check (1.2) run in each repository a unit works in:
+  `git -C <repo path> check-ignore -q .claude/worktrees/x`, and
+  `em engagement foundation <model>.em <slug> --code <repo path>` for each repo whose units hold
+  an event. An event only has to be `present` in the repository its own unit is placed in.
+
+**The plan (section 2).** Present units under their slices, as the text plan prints them, and
+say which repository each is in. The ceiling counts **units in flight**, not slices. An
+`element-unplaced` pre-flight finding means an element is in no unit: it goes to the human in
+the same question round, and the fix is in `code-map.yaml`, in a design session.
+
+**Cut and dispatch (section 3), per unit.** A unit is startable when its slice is not held and
+every node in its `dependsOn` is `merged`. Units of one slice with empty `dependsOn` start
+together; they build in parallel against the slice's contract and never wait for each other's
+code. For each startable unit:
+
+1. `base` is `main`, of the unit's own repository. Never that repository's current HEAD.
+2. If the branch (`git -C <repo path> rev-parse --verify --quiet <branch>`) or
+   `<repo path>/.claude/worktrees/<key>` already exists, STOP for that unit and report it.
+3. Cut the worktree in the unit's repository, with the branch name the node gives (the same name
+   in every repository the slice touches):
+   `git -C <repo path> worktree add .claude/worktrees/<key> -b <branch> main`
+4. Record it, per unit:
+   `em engagement set <model>.em <slug> <key> --unit <repo> --state building --branch <branch> --base main`
+5. Dispatch `em-implementer` with ONLY: the unit id, the absolute worktree path, the absolute
+   path of the model's repository (read-only: the slice doc and the constitution are there), the
+   exact pull-request title, the node's `marker` line and, when there is one, the tracking key.
+   Also hand it the unit's brief, verbatim:
+   `em engagement brief <model>.em <slug> --slice <key> --unit <repo>`. Give it no other unit's
+   brief, no plan and no merge instructions.
+
+The engagement file is in the model's repository and **only you write it**. An implementer in a
+code repository never touches it; it reports back and you record the result.
+
+**Validate, review, criticise (section 4), per unit.** Use `--unit <repo>` on every
+`em engagement set`: `--state validating --pr <url>`, then `review`, then `awaiting-merge`. The
+slice's own state follows from its units; never set it directly. The validator gets the unit
+id, the worktree path, the model repository's path, the title and the marker. The reviewer and
+the critic get the unit id and its PR URL. Findings go back to the same unit's implementer.
+
+**Cross-link the slice's pull requests.** As soon as every unit of a slice has a PR, comment on
+each with the others, so a reader of one finds the rest:
+`gh pr comment <url> --body "Sibling units of slice <key>: <url>, <url>"`. This is a lead step.
+The `marker` line in each PR body and the shared branch name already join them for a tool; the
+comment is for people.
+
+**Hand over (section 5).** Hand the human a slice's unit PRs together when they are ready
+together, each with its own evidence bundle, and say plainly that the slice is done only when
+all of them have merged. Each PR still merges independently, in any order.
+
+**After a merge (section 6).** `em engagement set <model>.em <slug> <key> --unit <repo> --state
+merged`, then remove that worktree: `git -C <repo path> worktree remove .claude/worktrees/<key>`.
+A slice reads `merged` only when every one of its units does. A unit whose `dependsOn` just
+cleared becomes startable. When all of a slice's units are `merged`, its closing step is due.
+
 ## Never do
 
 | Rule | Because |
@@ -229,3 +309,6 @@ constitution), follow the gap protocol (`reference/engagement.md`):
 | Never merge a PR | The human merges, in any order |
 | Never show the critic the reviewer's findings | The critic's value is an independent view; disagreement is a finding |
 | Never start a held slice, or ask "which slice first" | The plan decides order and holds; the human confirms only the ceiling |
+| Never clone, pull or push a repository to make a unit startable | `em` resolves checkouts and reports what is missing; fetching one is the human's call |
+| Never set a multi-unit slice's state directly, or let a unit's implementer write the engagement file | The Ledger has one writer, in the model's repository; a slice's state is derived from its units |
+| Never dispatch a unit whose `dependsOn` is not all `merged`, or dispatch one twice | The graph orders the work and the lead holds the claims |

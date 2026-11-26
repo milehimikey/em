@@ -31,6 +31,15 @@ Every slice's `base` is `main` (MIL-280): recorded once at `building`, never cha
 that still shows an `impl/<upstream>` base came from em ≤ 1.14.2; `plan` reports `main` and the
 next `set` on that slice should record `--base main`.
 
+### Per work unit
+
+When the plan has `units` (SKILL.md section 9), every state above is a **unit's** state, set
+with `--unit <repo>`. A slice in more than one repository has one record per unit on its Ledger
+line, and its own state is derived each time: `merged` only when every unit is, `held` or `gap`
+when any unit is, otherwise the state of its least advanced unit. `merged` is terminal per unit.
+A slice with a single unit is recorded as it always was; `--unit` is accepted and changes
+nothing about what is written.
+
 ## The evidence bundle (step 5)
 
 Hand the human one block per PR as it passes review, in this shape:
@@ -61,6 +70,10 @@ Per-invariant tests (from em-implementer):
 ```
 
 Copy the agents' lines verbatim; never summarise a finding away.
+
+For a work unit the heading names the unit (`<key>@<repo>`), and the table is the validator's
+table for that unit, run in the unit's repository. Give each unit of a slice its own bundle, and
+list the sibling units' PR URLs under the heading.
 
 ## The gap protocol (step 7)
 
