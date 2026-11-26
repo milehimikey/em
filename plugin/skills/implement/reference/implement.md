@@ -300,6 +300,12 @@ events the read model consumes across every position via `alsoReads` (§2). Neve
 slice docs' implementations into one PR because they touch the same read model, ship together,
 or seem small — see §10.
 
+**One exception to "one PR", and none to "one doc".** When the model has a `code-map.yaml` and a
+slice's code is in more than one repository, the slice is built as one PR per **work unit** (the
+slice's code in one repository). The slice doc is still the one spec, and each unit's PR cites
+it. §12 says what changes for a unit; everything in this section applies to each unit's PR
+unless §12 says otherwise.
+
 - The PR description cites exactly one slice doc (plus its `covers:` keys, if any) and lists
   that doc's invariants alongside the tests that cover them.
 - Every `INV-<MNEMONIC>-n` invariant has at least one test that cites its ID — checked mechanically by
@@ -538,6 +544,32 @@ plan/tasks as FEATURE_SPEC. The rules that keep redirect mode safe:
 
 No spec-kit (or any SDD tool)? Implement straight from the slice doc — it already contains
 everything a spec holds. Don't introduce an intermediate spec document of your own.
+
+## 12. Work units: a slice in more than one repository
+
+(Numbered 12 so the sections above keep their numbers; read it with §5 and §8.)
+
+A model with a `code-map.yaml` beside it says where each element's code lives: a repository and
+a root. One slice can then have code in two repositories, typically a `ui` in a frontend
+repository and its command and event in a service's. Such a slice is built as **work units**:
+one per repository its code is in, each with its own worktree, branch, implementer and PR. A
+unit's id is `<slice-key>@<repo>`.
+
+What stays the same: there is one slice doc, it is ratified once, it is read-only, and every
+unit's PR cites it. What a unit's implementer is given, and does differently:
+
+- **The unit's brief** names the elements that are yours. Build those, in the unit's repository.
+  The rest of the slice is another unit's.
+- **The model's repository is somewhere else.** You get its path. The slice doc, the model and
+  the constitution are read from there; nothing is written there by a unit.
+- **Build against the contract, not against sibling code.** A slice with a `public` element has
+  a generated contract, and its units build in parallel against it. Only a slice with no
+  `public` element has nothing to build against; there the unit that calls waits for the unit
+  that provides, and the brief says so.
+- **Definition of done, per unit.** Every bullet of §5 holds for the unit's PR, read for the
+  unit's own elements: each invariant and scenario one of **your** elements carries has a test
+  citing its id; the others are named as another unit's. `em coverage … --strict` over the whole
+  slice is the lead's check once every unit has reported, not one unit's.
 
 ## 10. Never do
 

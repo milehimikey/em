@@ -17,6 +17,14 @@ Review three things:
 - Slice isolation: nothing outside this slice's package changed; no reach into another slice or shared infrastructure.
 - Constitution conformance: layout, naming, testing, and branch norms.
 
+## Work unit
+
+The pull request may be for a **work unit** (`<slice-key>@<repo>`): one slice's code in one repository, built from the same slice doc as the slice's other units. Then:
+
+- Spec fidelity is judged for the elements this unit builds (its brief lists them). What the doc says about the slice's other elements is not missing from this pull request; it is in a sibling unit's. Do not raise it as a gap here.
+- Isolation is judged against the unit's place: the repository and roots its brief names.
+- When you are given the sibling units' pull requests, read them as context for how the halves meet. A mismatch between the two (a field one sends and the other does not accept, a route one calls and the other does not serve) is a finding, cited to the slice doc line both should satisfy.
+
 ## Hard lines
 
 - Every finding cites a slice doc line or section, or a constitution rule. A finding you cannot cite is not a finding; drop it.
