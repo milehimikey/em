@@ -12,13 +12,23 @@
 // the CLI cannot change for you). The CLI binary itself has no such constraint - it can re-exec
 // itself - so pinning it can be fully transparent instead of just detected.
 //
+// Beside the mise pin (src/cli/misePin.ts): `.em-version` is the pin em itself reads, so it holds on
+// any machine that has `em` and `npx`, whether or not mise is installed there. A repo may carry
+// either or both. Both get the same two hooks: `em skill check` compares each against the plugin pin
+// (or the installed em), so two pin files that disagree cannot both pass, and `em upgrade` moves
+// each to the installed em. `em upgrade` itself is never dispatched (dispatchExempt): it is the
+// command that moves the pin, so it has to run as the em that was just installed.
+//
 // Resolution (findVersionPin, resolveDispatch) is pure and unit-tested directly; the actual spawn
 // (dispatchToPinnedVersion) is a thin wrapper around `npx`, exercised by an opt-in integration test
 // since it needs real process spawning and (on a cache miss) network access.
 
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, resolve as resolvePath } from "node:path";
 import { spawn } from "node:child_process";
+import { pluginPinVersion } from "./misePin.js";
+import type { PluginDeclaration } from "./pluginPin.js";
+import type { SkillCheckFinding } from "./skillCheck.js";
 
 export const VERSION_PIN_FILENAME = ".em-version";
 /** Set (to any non-empty value) to skip pin resolution entirely - the recursion-safety and local-dev
@@ -40,10 +50,11 @@ export interface VersionPin {
  * Walk up from `startDir` to the filesystem root looking for `.em-version`. Returns the first
  * (closest) one found, trimmed; `null` if none exists anywhere up the tree, or the closest one is
  * present but empty/whitespace-only (treated as absent, not an error - never block the CLI on a
- * malformed pin file).
+ * malformed pin file). When `stopAt` is given, the walk does not leave that directory.
  */
-export function findVersionPin(startDir: string): VersionPin | null {
+export function findVersionPin(startDir: string, stopAt?: string): VersionPin | null {
   let dir = startDir;
+  const stop = stopAt ? resolvePath(stopAt) : null;
   for (;;) {
     const candidate = join(dir, VERSION_PIN_FILENAME);
     if (existsSync(candidate)) {
@@ -51,19 +62,76 @@ export function findVersionPin(startDir: string): VersionPin | null {
       if (version.length > 0) return { version, source: candidate };
     }
     const parent = dirname(dir);
-    if (parent === dir) return null; // reached the filesystem root
+    if (parent === dir || (stop !== null && resolvePath(dir) === stop)) return null; // filesystem root, or `stopAt`
     dir = parent;
   }
+}
+
+/** Commands that always run as the installed em, whatever `.em-version` says. `upgrade` is the
+ *  command that moves the pin: dispatched to the pinned (older) em it could never bring a repo
+ *  forward. The command is the first argument that is not an option. */
+const DISPATCH_EXEMPT_COMMANDS: ReadonlySet<string> = new Set(["upgrade"]);
+
+export function dispatchExempt(args: readonly string[]): boolean {
+  const command = args.find((a) => !a.startsWith("-"));
+  return command !== undefined && DISPATCH_EXEMPT_COMMANDS.has(command);
+}
+
+/** Replace the pinned version in the text of a `.em-version` file, keeping the whitespace around it
+ *  (a trailing newline, LF or CRLF). `null` when the text holds no version. */
+export function rewriteVersionPin(text: string, version: string): string | null {
+  const current = text.trim();
+  if (current.length === 0) return null;
+  const at = text.indexOf(current);
+  return text.slice(0, at) + version + text.slice(at + current.length);
+}
+
+export interface VersionPinCheck {
+  pin: VersionPin;
+  /** `null` when the pin agrees. */
+  finding: SkillCheckFinding | null;
+}
+
+/**
+ * Compare the `.em-version` pin found from `repoRoot` against the plugin pin's version (when the
+ * repo declares the plugin) or the installed em: the same comparison `checkMisePin` makes for a
+ * `mise.toml` pin, so a repo carrying both files is only clean when they agree. `null` when no
+ * `.em-version` is found.
+ */
+export function checkVersionPin(repoRoot: string, installedVersion: string, plugin: PluginDeclaration | null): VersionPinCheck | null {
+  const pin = findVersionPin(resolvePath(repoRoot));
+  if (!pin) return null;
+  const expected = plugin ? pluginPinVersion(plugin) : installedVersion;
+  if (pin.version === expected) return { pin, finding: null };
+  const shown = relative(resolvePath(repoRoot), pin.source) || pin.source;
+  const against = plugin ? `the em plugin pin (${plugin.name} at ${plugin.ref ?? "(no ref)"})` : `installed em ${installedVersion}`;
+  return {
+    pin,
+    finding: {
+      code: "em-version-pin-mismatch",
+      message: `.em-version pin mismatch: ${shown} pins em at ${pin.version}, but ${against} is ${expected} - write ${expected} to ${shown}, or run em upgrade`,
+      emVersionPin: pin.version,
+      emVersionFile: shown,
+      installedVersion,
+    },
+  };
 }
 
 /**
  * Decide whether a `.em-version` pin requires dispatching away from the currently-running
  * `installedVersion`. `null` means no dispatch: either no pin exists anywhere up the tree, the pin
  * matches what's already running (this is what guarantees the dispatched child doesn't recurse into
- * dispatching itself again), or `SKIP_ENV_VAR` is set.
+ * dispatching itself again), `SKIP_ENV_VAR` is set, or `args` name a command that never dispatches
+ * (`em upgrade`, see `dispatchExempt`).
  */
-export function resolveDispatch(startDir: string, installedVersion: string, env: NodeJS.ProcessEnv = process.env): VersionPin | null {
+export function resolveDispatch(
+  startDir: string,
+  installedVersion: string,
+  env: NodeJS.ProcessEnv = process.env,
+  args: readonly string[] = [],
+): VersionPin | null {
   if (env[SKIP_ENV_VAR]) return null;
+  if (dispatchExempt(args)) return null;
   const pin = findVersionPin(startDir);
   if (!pin || pin.version === installedVersion) return null;
   return pin;

@@ -60,41 +60,60 @@ that is a global install per contributor — and they drift. The symptom is conf
 model gives different `em slice sync` output or different validation results on different
 machines, and `em skill check` fails with `plugin-pin-mismatch` on some of them.
 
-The fix is to put a per-project `em` on PATH rather than to change the skills. Recommended:
-[mise](https://mise.jdx.dev), which already manages Node, the JDK and the rest for most teams,
-has an npm backend, and needs no `package.json` (so it works in a Kotlin or Go repo exactly as in
-a Node one):
+The fix is to pin `em` per project rather than to change the skills. There are two pins, and a
+repo may carry either or both.
+
+**`.em-version` (built in, GH #223).** A one-line file next to the model, or anywhere above it:
 
 ```bash
-mise use npm:@milehimikey/em@1.14.1
+echo "1.24.0" > .em-version
 ```
 
-That writes the pin to `mise.toml` and shims `em`, so every bare `em <command>` — in your shell,
-in the skills, in the sub-agents, and in CI (`jdx/mise-action`, or `mise install && mise exec`) —
-runs exactly that version inside the repo:
+When the `em` that starts is not that version, it re-runs the command as
+`npx -y @milehimikey/em@<pinned>` with the same arguments, input, output and exit code. So every
+bare `em <command>` (in your shell, in the skills, in the sub-agents) runs the pinned version, on
+any machine that has `em` and `npx`. Nothing else has to be installed, which matters where you
+cannot count on a tool manager being present: a cloud agent's sandbox, a CI image, a colleague's
+laptop. It is looked up from the current directory upward. `em upgrade` is the one command that is
+never re-run this way, because it is the command that moves the pin. `EM_SKIP_VERSION_PIN=1` turns
+the pin off for one invocation.
+
+**mise (optional).** Where the team already uses [mise](https://mise.jdx.dev) for Node, the JDK and
+the rest, it can hold the em pin too, through its npm backend and with no `package.json`:
+
+```bash
+mise use npm:@milehimikey/em@1.24.0
+```
+
+That writes the pin to `mise.toml` and shims `em`, so bare `em` resolves to that version wherever
+mise is active (`jdx/mise-action`, or `mise install && mise exec`, in CI):
 
 ```toml
 [tools]
-"npm:@milehimikey/em" = "1.14.1"
+"npm:@milehimikey/em" = "1.24.0"
 ```
 
-Keep the two pins on the same version — the mise line and the plugin's `extraKnownMarketplaces`
-key — and the CLI, the skills and the MCP server cannot skew from each other. Commit both.
+mise only holds where mise runs. A repo whose agents or pipelines may run without it should carry
+`.em-version` as well, or instead.
 
-Upgrading is one step: `em upgrade --apply` moves the plugin pin, the `mise.toml` line (the
-`mise-pin` step rewrites only that version value, in its own commit, and never creates a
-`mise.toml`) and everything else in the repo it knows how to migrate; then run `mise install`.
-`em skill check --ci` in the pipeline is the backstop: a contributor whose `em` disagrees with the
-committed plugin pin fails on `plugin-pin-mismatch`, and a `mise.toml` that disagrees with the
-plugin pin (or, without the plugin, with the installed `em`) fails on `mise-pin-mismatch` with the
-`mise use npm:@milehimikey/em@<ver>` fix line, instead of producing silently different output.
+**Keep every pin on one version**: `.em-version`, the mise line, and the plugin's
+`extraKnownMarketplaces` key. Then the CLI, the skills and the MCP server cannot skew from each
+other. Commit them all.
 
-**Without mise.** Run the CLI through `npx` with the exact version, which needs no install at
-all — this is what the generated CI workflow does (`npx @milehimikey/em@<version> ...`, see
-[ci.md](ci.md)) — or add `@milehimikey/em` as an exact-version `devDependency` in a Node repo and
-run `npx em <command>`. Either covers humans and CI; it does not cover the agent path, because the
-skills still call bare `em`, so a repo that relies on `npx` alone still needs contributors' global
-`em` to match the plugin pin (which `em skill check` verifies).
+Upgrading is one step: `em upgrade --apply` moves the plugin pin, the `mise.toml` line (`mise-pin`)
+and the `.em-version` file (`em-version-pin`), each in its own commit, with everything else in the
+repo it knows how to migrate. It never creates a pin file that was not there. Run `mise install`
+afterwards if you use mise. `em skill check --ci` in the pipeline is the backstop: a contributor
+whose `em` disagrees with the committed plugin pin fails on `plugin-pin-mismatch`; a `mise.toml`
+that disagrees with the plugin pin (or, without the plugin, with the installed `em`) fails on
+`mise-pin-mismatch`; and a `.em-version` that disagrees the same way fails on
+`em-version-pin-mismatch`. Both pin files are held to the same version, so two that disagree with
+each other cannot both pass.
+
+**In generated CI.** The workflow `em ci init` writes runs `npx @milehimikey/em@<version> ...` with
+the version written into each step (see [ci.md](ci.md)), so it needs neither pin file. In a Node
+repo an exact-version `devDependency` and `npx em <command>` also works for humans and CI, but not
+for the agent path, because the skills call bare `em`; use `.em-version` for that.
 
 ### What `em skill check` verifies for a plugin repo
 

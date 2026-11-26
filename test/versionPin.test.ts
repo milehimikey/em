@@ -7,7 +7,17 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { findVersionPin, resolveDispatch, dispatchToPinnedVersion, VERSION_PIN_FILENAME, SKIP_ENV_VAR } from "../src/cli/versionPin.js";
+import {
+  findVersionPin,
+  resolveDispatch,
+  dispatchToPinnedVersion,
+  dispatchExempt,
+  rewriteVersionPin,
+  checkVersionPin,
+  VERSION_PIN_FILENAME,
+  SKIP_ENV_VAR,
+} from "../src/cli/versionPin.js";
+import type { PluginDeclaration } from "../src/cli/pluginPin.js";
 
 const made: string[] = [];
 afterEach(() => {
@@ -118,5 +128,78 @@ describe("dispatchToPinnedVersion", () => {
     await expect(
       dispatchToPinnedVersion("1.13.0", ["validate"], { ...process.env, PATH: "/nonexistent-path-for-test" }),
     ).rejects.toThrow();
+  });
+});
+
+describe("dispatchExempt: em upgrade always runs as the installed em", () => {
+  it("exempts `upgrade`, with or without options before it", () => {
+    expect(dispatchExempt(["upgrade", "model.em", "--apply"])).toBe(true);
+    expect(dispatchExempt(["--no-color", "upgrade", "model.em"])).toBe(true);
+  });
+
+  it("does not exempt any other command, or an argument that merely says upgrade", () => {
+    expect(dispatchExempt(["validate", "model.em"])).toBe(false);
+    expect(dispatchExempt(["skill", "check"])).toBe(false);
+    expect(dispatchExempt(["status", "upgrade"])).toBe(false);
+    expect(dispatchExempt([])).toBe(false);
+  });
+
+  it("resolveDispatch is null for `em upgrade` even when the pin differs", () => {
+    const d = tmp("em-versionpin-exempt-");
+    pinFile(d, "1.14.0\n");
+    expect(resolveDispatch(d, "1.24.0", {}, ["upgrade", "model.em"])).toBeNull();
+    expect(resolveDispatch(d, "1.24.0", {}, ["validate", "model.em"])?.version).toBe("1.14.0");
+  });
+});
+
+describe("findVersionPin with stopAt", () => {
+  it("does not look above stopAt", () => {
+    const root = tmp("em-versionpin-stop-");
+    const repo = join(root, "repo");
+    mkdirSync(join(repo, "models"), { recursive: true });
+    pinFile(root, "1.14.0\n");
+    expect(findVersionPin(join(repo, "models"), repo)).toBeNull();
+    expect(findVersionPin(join(repo, "models"))?.version).toBe("1.14.0");
+    pinFile(repo, "1.20.0\n");
+    expect(findVersionPin(join(repo, "models"), repo)?.version).toBe("1.20.0");
+  });
+});
+
+describe("rewriteVersionPin", () => {
+  it("replaces the version and keeps the surrounding whitespace, LF or CRLF", () => {
+    expect(rewriteVersionPin("1.14.0\n", "1.24.0")).toBe("1.24.0\n");
+    expect(rewriteVersionPin("1.14.0\r\n", "1.24.0")).toBe("1.24.0\r\n");
+    expect(rewriteVersionPin("  1.14.0", "1.24.0")).toBe("  1.24.0");
+  });
+
+  it("is null for a file that holds no version", () => {
+    expect(rewriteVersionPin("  \n", "1.24.0")).toBeNull();
+  });
+});
+
+describe("checkVersionPin (em skill check)", () => {
+  const plugin: PluginDeclaration = { name: "em-1-23-0", ref: "v1.23.0", enabled: true } as PluginDeclaration;
+
+  it("is null when no .em-version is found", () => {
+    expect(checkVersionPin(tmp("em-versionpin-check-none-"), "1.23.0", null)).toBeNull();
+  });
+
+  it("compares against the installed em when the repo declares no plugin", () => {
+    const d = tmp("em-versionpin-check-installed-");
+    pinFile(d, "1.14.0\n");
+    expect(checkVersionPin(d, "1.14.0", null)?.finding).toBeNull();
+    const f = checkVersionPin(d, "1.23.0", null)!.finding!;
+    expect(f.code).toBe("em-version-pin-mismatch");
+    expect(f.emVersionPin).toBe("1.14.0");
+    expect(f.emVersionFile).toBe(VERSION_PIN_FILENAME);
+    expect(f.message).toContain("installed em 1.23.0");
+  });
+
+  it("compares against the plugin pin when the repo declares the plugin", () => {
+    const d = tmp("em-versionpin-check-plugin-");
+    pinFile(d, "1.23.0\n");
+    expect(checkVersionPin(d, "1.24.0", plugin)?.finding).toBeNull();
+    pinFile(d, "1.22.0\n");
+    expect(checkVersionPin(d, "1.24.0", plugin)?.finding?.message).toContain("the em plugin pin (em-1-23-0 at v1.23.0) is 1.23.0");
   });
 });

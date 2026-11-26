@@ -1519,6 +1519,68 @@ describe("mise-pin step (GH #298)", () => {
   });
 });
 
+describe("em-version-pin step (GH #223)", () => {
+  function pinRepo(text: string | null): { dir: string; packagedSkillsRoot: string } {
+    const r = makeFixtureRepo();
+    if (text !== null) {
+      writeFileSync(join(r.dir, ".em-version"), text);
+      git(r.dir, "add", ".em-version");
+      git(r.dir, "commit", "-q", "-m", "pin");
+    }
+    return r;
+  }
+  const stepOf = (dir: string, root: string) => detectUpgrade(makeCtx(dir, root)).steps.find((x) => x.id === "em-version-pin")!;
+
+  it("is registered right after mise-pin, since 1.24.0", () => {
+    const ids = UPGRADE_STEPS.map((s) => s.id);
+    expect(ids.indexOf("em-version-pin")).toBe(ids.indexOf("mise-pin") + 1);
+    expect(UPGRADE_STEPS.find((s) => s.id === "em-version-pin")!.sinceVersion).toBe("1.24.0");
+  });
+
+  it("is not applicable without a .em-version, and never creates one", () => {
+    const { dir, packagedSkillsRoot } = pinRepo(null);
+    expect(stepOf(dir, packagedSkillsRoot).applicable).toBe(false);
+    applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(existsSync(join(dir, ".em-version"))).toBe(false);
+  });
+
+  it("is not applicable when the pin already matches the installed em", () => {
+    const { dir, packagedSkillsRoot } = pinRepo(`${INSTALLED_VERSION}\n`);
+    expect(stepOf(dir, packagedSkillsRoot).applicable).toBe(false);
+  });
+
+  it("dry-run lists em-version-pin and writes nothing", () => {
+    const { dir, packagedSkillsRoot } = pinRepo("1.12.0\n");
+    const s = stepOf(dir, packagedSkillsRoot);
+    expect(s.applicable).toBe(true);
+    expect(s.reason).toContain("1.12.0");
+    expect(readFileSync(join(dir, ".em-version"), "utf8")).toBe("1.12.0\n");
+  });
+
+  it("--apply rewrites the version (line ending kept) in one trailered commit", () => {
+    const { dir, packagedSkillsRoot } = pinRepo("1.12.0\r\n");
+    const result = applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(result.ok).toBe(true);
+    expect(readFileSync(join(dir, ".em-version"), "utf8")).toBe(`${INSTALLED_VERSION}\r\n`);
+    const out = spawnSync("git", ["-C", dir, "log", "--format=%(trailers:key=Em-Upgrade,valueonly)"], { encoding: "utf8" }).stdout;
+    expect(out.split("\n").filter((l) => l.trim() === "em-version-pin")).toHaveLength(1);
+    expect(isWorkingTreeClean(dir)).toBe(true);
+    const applied = result.ok ? result.applied : [];
+    expect(applied.find((a) => a.id === "em-version-pin")!.changedFiles).toEqual([".em-version"]);
+  });
+
+  it("moves a mise pin and a .em-version pin in the same run, one commit each", () => {
+    const { dir, packagedSkillsRoot } = pinRepo("1.12.0\n");
+    writeFileSync(join(dir, "mise.toml"), `[tools]\n"npm:@milehimikey/em" = "1.12.0"\n`);
+    git(dir, "add", "mise.toml");
+    git(dir, "commit", "-q", "-m", "mise");
+    const result = applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(result.ok).toBe(true);
+    expect(readFileSync(join(dir, ".em-version"), "utf8")).toBe(`${INSTALLED_VERSION}\n`);
+    expect(readFileSync(join(dir, "mise.toml"), "utf8")).toContain(`"${INSTALLED_VERSION}"`);
+  });
+});
+
 describe("ratified-sections step (GH #487)", () => {
   const CLEAN = 'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order note "slices/place-order.md"\n  event Order Placed\n}\n';
   const BODY = "# Slice\n\n## Intent\n\nwhy\n\n## Open Questions\n\n- [x] answered — yes\n";

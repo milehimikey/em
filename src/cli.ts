@@ -110,7 +110,7 @@ import { buildSkillCheckJson } from "./emit/skillCheckJson.js";
 import { checkMisePin } from "./cli/misePin.js";
 import { checkPlugin, claudePluginsDir, detectPlugin, pluginInstallCommands } from "./cli/pluginPin.js";
 import { readContract } from "./cli/contract.js";
-import { resolveDispatch, dispatchToPinnedVersion } from "./cli/versionPin.js";
+import { resolveDispatch, dispatchToPinnedVersion, checkVersionPin } from "./cli/versionPin.js";
 import { EM_SKILL_DIR_NAMES, EM_SHARED_DIR_NAMES, EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR, EM_AGENT_FILES, resolveVendoredDirs, VendoredDirs } from "./cli/skillDirs.js";
 import { createServer as createMcpServer } from "./mcp/server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -4296,11 +4296,15 @@ skill
       : { findings: [], ok: true };
     // GH #298: the mise.toml pin of the em CLI, when one is declared (a repo without it is unchanged).
     const miseCheck = checkMisePin(resolve(path), PKG_VERSION, pluginCheck?.plugin ?? null);
+    // GH #223: the `.em-version` pin, when one is found. It is held to the same version as the mise
+    // pin, so a repo carrying both files is only clean when they agree.
+    const versionPinCheck = checkVersionPin(resolve(path), PKG_VERSION, pluginCheck?.plugin ?? null);
     const findings = [
       ...vendored.findings,
       ...agents.findings,
       ...(pluginCheck?.findings ?? []),
       ...(miseCheck?.finding ? [miseCheck.finding] : []),
+      ...(versionPinCheck?.finding ? [versionPinCheck.finding] : []),
     ];
     const failing = findings.filter((f) => f.code !== "plugin-not-installed-locally" || ciMode);
     const ok = failing.length === 0;
@@ -4324,6 +4328,7 @@ skill
           );
         }
         if (miseCheck) console.log(`ok — mise pin (${miseCheck.pin.version}) matches`);
+        if (versionPinCheck) console.log(`ok — .em-version pin (${versionPinCheck.pin.version}) matches`);
       }
     }
 
@@ -4748,7 +4753,7 @@ function runProgram(): void {
 }
 
 if (isMainModule(import.meta.url)) {
-  const pin = resolveDispatch(process.cwd(), PKG_VERSION);
+  const pin = resolveDispatch(process.cwd(), PKG_VERSION, process.env, process.argv.slice(2));
   if (pin) {
     dispatchToPinnedVersion(pin.version, process.argv.slice(2))
       .then((code) => process.exit(code))
