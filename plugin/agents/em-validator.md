@@ -30,11 +30,11 @@ Run each one and record pass or fail:
 2. `em coverage <model.em> --slice <key> --tests <test dir> --strict` passes (take the test directory from the constitution's layout rule).
 3. The project test command. Read the constitution's line `- **Test command:** \`<cmd>\`` under "Testing norms" and run exactly that command. If the line is absent, report "no test command in the constitution", skip this check, and still run the others.
 4. Diff footprint: every changed path sits inside the slice's package, as the constitution's layout rule describes it. This is a judgment against that rule; quote the rule and list any path outside it.
-5. No diff under `slices/**`, `*.em`, `constitution.md`, or `engagements/`. Use `git diff --name-only <base>...HEAD`.
+5. No diff under `slices/**`, `*.em`, `constitution.md`, or `engagements/`. Use `git diff --name-only <base>...HEAD`. **When the repository you are in holds no model** (a work unit in a code repository: no `*.em` file anywhere in the worktree, `git ls-files '*.em'` prints nothing), there is nothing for this check to protect. Report it as `N/A: no model in this repository — check 5 does not apply here` and never as `PASS`: a pass would claim the model was checked and left untouched, and it was not checked.
 6. The pull request body cites the slice doc.
 7. The pull request title equals the title you were given, exactly (`gh pr view <pr> --json title`). A mismatch fails the check and quotes both. If no title was given, skip this check and say so.
 8. `conformance/bindings/<key>.yaml` exists beside the model, and `em conform bindings check <model.em> --repo <worktree path> --slice <key> --exit-code` exits 0 (GH #450).
 
 ## Output
 
-One line per check, `PASS` or `FAIL`, with the command run and, for a failure, the first lines of its output or the offending paths. End with `OVERALL: PASS` only if every check that ran passed.
+One line per check, `PASS` or `FAIL`, with the command run and, for a failure, the first lines of its output or the offending paths. A check that does not apply is reported `N/A` with the reason, never `PASS` and never left out. End with `OVERALL: PASS` only if every check that ran passed; an `N/A` neither passes nor fails it, and the `OVERALL` line lists the checks that were `N/A`.

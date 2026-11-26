@@ -72,7 +72,9 @@ Per-invariant tests (from em-implementer):
 Copy the agents' lines verbatim; never summarise a finding away.
 
 For a work unit the heading names the unit (`<key>@<repo>`), and the table is the validator's
-table for that unit, run in the unit's repository. Give each unit of a slice its own bundle, and
+table for that unit, run in the unit's repository. A unit in a code repository that holds no
+model shows check 5 (no diff under `slices/**`, `*.em`, …) as `N/A — no model in this
+repository`. Copy that as given. Never turn an `N/A` into `PASS` in the bundle. Give each unit of a slice its own bundle, and
 list the sibling units' PR URLs under the heading.
 
 ## The gap protocol (step 7)
