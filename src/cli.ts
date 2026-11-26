@@ -3297,7 +3297,7 @@ program
       // merged `sliceFacts` above (which spans every input file when several are given).
       const conformance = compiled.map(({ file }) => {
         const facts = factsByFile.get(file) ?? [];
-        const sliceDocFacts: SliceDocFacts[] = facts.map((f) => ({ key: f.key, status: f.rawStatus, implementedIn: f.implementedIn, shipped: f.shipped, file: f.sliceFile }));
+        const sliceDocFacts: SliceDocFacts[] = facts.map((f) => ({ key: f.key, status: f.rawStatus, implementedIn: f.implementedIn, shipped: f.shipped, file: f.sliceFile, boundFiles: f.boundFiles }));
         return resolveConformanceEntry(file, opts.repo, sliceDocFacts);
       });
       // MIL-218: one model-version entry per input file.

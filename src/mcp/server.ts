@@ -622,7 +622,7 @@ export function createServer(): McpServer {
       // merged `sliceFacts` above (which spans every input file when several are given).
       const conformance = compiledFiles.map(({ file }) => {
         const facts = factsByFile.get(file) ?? [];
-        const sliceDocFacts: SliceDocFacts[] = facts.map((f) => ({ key: f.key, status: f.rawStatus, implementedIn: f.implementedIn, shipped: f.shipped, file: f.sliceFile }));
+        const sliceDocFacts: SliceDocFacts[] = facts.map((f) => ({ key: f.key, status: f.rawStatus, implementedIn: f.implementedIn, shipped: f.shipped, file: f.sliceFile, boundFiles: f.boundFiles }));
         return resolveConformanceEntry(file, repo, sliceDocFacts);
       });
       // MIL-218: one model-version entry per input file — same computation cli.ts's `status`
@@ -835,8 +835,8 @@ export function createServer(): McpServer {
       description:
         "Return the same JSON document `em conform-scope <file> --repo <repo>` prints: the " +
         "state file's `Last conformance:` marker, the target repo's changed paths since that " +
-        "revision (`git diff --name-only`), each mapped to a candidate slice via its doc's " +
-        "`implementedIn`, and any leftover unmapped paths. REQUIRES `repo` to be (or be inside) " +
+        "revision (`git diff --name-only`), each mapped to a candidate slice via its bindings " +
+        "manifest or its doc's `implementedIn`, and any leftover unmapped paths. REQUIRES `repo` to be (or be inside) " +
         "a git repository, and `file`'s sibling state file (.event-modeling.md) to exist and " +
         "parse. Read-only: unlike the CLI's `--seed-asis` flag (which writes a scratch model " +
         "file to disk), this tool never writes anything — use the CLI directly for that step.",
