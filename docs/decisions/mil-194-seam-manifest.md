@@ -5,6 +5,16 @@ follows directly from the gap [MIL-162](mil-162-teachable-navigator.md) found an
 "em has no DSL-level cross-model reference," so the portal's cross-model links were a
 name-matching heuristic with no compiler guarantee behind them.
 
+> **Superseded in part by em 1.14.0 (MIL-235).** This record describes manifest schema 1.0 as it
+> shipped in 1.10.0. Since 1.14.0 the manifest is schema 2.0 and holds membership only
+> (`systemSchemaVersion`, `name`, `models: {key: {source}}`). A seam is declared on the consuming
+> translation as `consumes <model>:<kind>.<slug>` ([dsl.md](../dsl.md#consuming-another-models-public-surface)), and an owner on the model
+> header as `model "Name" owner "@org/team"`. A 2.0 manifest that carries `seams:` or `owner:` is
+> invalid (`system-manifest-invalid`); a 1.0 manifest is still read, with a
+> `system-manifest-outdated` warning, and `em upgrade` migrates it. So option B below, rejected
+> here "for now", is what shipped, in the form of `consumes`. What still holds: verification reads
+> export JSON only, model keys are MIL-193's, and refs are export refs.
+
 ## Problem
 
 Several sub-departments each maintain a model, and many model pairs are the two sides of one
@@ -36,7 +46,8 @@ reaction needs a declared producer.
 
 ## Decision
 
-Option A. The manifest is deliberately small:
+Option A. The manifest is deliberately small (schema 1.0, as decided here; see the note at the
+top for the 2.0 shape in use today):
 
 ```yaml
 systemSchemaVersion: "1.0"
