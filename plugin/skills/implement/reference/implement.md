@@ -571,6 +571,19 @@ unit's PR cites it. What a unit's implementer is given, and does differently:
   citing its id; the others are named as another unit's. `em coverage … --strict` over the whole
   slice is the lead's check once every unit has reported, not one unit's.
 
+### The join key
+
+A slice in two repositories is two pull requests no forge links. Each unit's PR carries a join
+key in two forms, both given to the implementer, neither composed by it:
+
+- **The branch name**: the same one in every repository the slice touches, `impl/<slice-key>`.
+- **A line in the PR body**: `Em-Unit: <modelKey>:<slice-key>@<repo>`, on a line of its own,
+  exactly as given.
+
+With either, a person or a tool can find all of a slice's pull requests from the forge alone.
+The closing step's PR carries `Em-Unit: <modelKey>:<slice-key>@close` on branch
+`close/<slice-key>`.
+
 ### Bindings, and the closing step
 
 A slice has **one** bindings file, `conformance/bindings/<slice-key>.yaml`, and it lives in the
