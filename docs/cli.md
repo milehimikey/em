@@ -151,7 +151,7 @@ model directory, and the system-level files at the repository root:
 
 ```
 my-project/
-  system.yaml                  # optional: systemSchemaVersion "2.0", name + models (else discovery)
+  system.yaml                  # optional: systemSchemaVersion "2.0", name + models (else discovery); "2.1" adds repos
   CODEOWNERS                   # managed block from `em system codeowners`
   .claude/settings.json        # the pinned em plugin (see ai-workflow.md)
   .github/workflows/
@@ -3349,6 +3349,39 @@ models:                         # required, ≥1 entry; keys ARE the model keys
 - Unknown keys anywhere are errors, not ignored. In a 2.0 manifest, `seams:` and a model
   `owner:` are errors whose message points at `em upgrade`.
 
+**Schema 2.1: `repos:` (since 1.24.0, GH #526).** A system whose code lives in more than one
+repository lists those repositories here, once. The key is optional, and a manifest declares
+`systemSchemaVersion: "2.1"` to carry it:
+
+```yaml
+systemSchemaVersion: "2.1"
+name: Storefront
+repos:                          # optional; repo id -> { remote }
+  storefront-web: { remote: "git@github.com:acme/storefront-web.git" }
+  checkout-svc:   { remote: "https://github.com/acme/checkout-svc.git" }
+models:
+  checkout:
+    source: models/checkout/checkout.em
+```
+
+- A **repo id** is the logical name every other file uses for that repository. It is letters,
+  digits, `.`, `_` or `-`, starting with a letter or digit: anything a repository directory can
+  be called, so the id can be the directory name of a checkout. Two ids may not differ only by
+  case.
+- **`self` is reserved.** It always means the repository the model itself lives in, and is never
+  declared in `repos:`.
+- **`remote`** is required: the clone URL or `git@host:owner/repo.git` address, one string with
+  no whitespace. It is recorded, never fetched. `em` does not clone, pull or push.
+- **No local paths.** Where a repository is checked out on one machine is not a fact about the
+  system, so it never goes in this file.
+- 2.1 is additive. A 2.0 manifest reads exactly as before, `em` still writes 2.0 (the
+  `em upgrade` migration writes nothing 2.1 adds), and nothing asks you to change the version
+  unless you add `repos:`. `repos:` under `"2.0"` is an error that names the version to set.
+  An `em` older than 1.24.0 refuses a `"2.1"` manifest as an unsupported version, so move the
+  pin first.
+- `em system` and its `--json` document do not report `repos:`; the system document is
+  unchanged.
+
 **Schema 1.0 manifests still verify.** A 1.0 manifest (with `seams:` and per-model `owner:`) is
 still read, so an estate that hasn't migrated yet keeps working. `em system` adds one
 `system-manifest-outdated` warning, and still verifies the 1.0 `seams:` with the
@@ -3370,7 +3403,7 @@ point at that model's source. The codes are stable and safe to match in CI
 | `consumes-unknown-model` | error | A `consumes` ref names a model key the system doesn't have. `refs` = [the consuming translation, the ref as written] |
 | `consumes-unknown-element` | error | The model exists but has no `public` event/view of that kind and slug. The message says when the element exists but isn't `public`. Same `refs` |
 | `consumer-not-adapted` | error | A consuming translation still declares a field its producer's `public` element no longer has (removed, or renamed: the message names the new name via `renamed from`), or declares a shared field with a different type. One finding per binding, listing every field. `refs` = [the consuming translation, the producer element], both qualified. The message ends `producer last changed in <sha>` (`git log -n1` over the producer's `.em`, 12 characters), or `(commit unknown)` when there is no git history or the producer is an export document. A producer change that only adds a field, required or optional, never raises it: consumers tolerate unknown fields (the generated contract says so, see `em api generate`) |
-| `system-manifest-invalid` | error | Shape problems: missing/unknown keys, an unsupported `systemSchemaVersion`, `seams:`/`owner:` in a 2.0 manifest, an unreadable/unparseable source, or (discovery) no models found |
+| `system-manifest-invalid` | error | Shape problems: missing/unknown keys, an unsupported `systemSchemaVersion`, `seams:`/`owner:` in a 2.0 or 2.1 manifest, `repos:` in a 2.0 manifest or a malformed `repos:` entry, an unreadable/unparseable source, or (discovery) no models found |
 | `system-manifest-outdated` | warning | The manifest is schema 1.0. It still verifies; run `em upgrade` |
 | `system-model-key-mismatch` | error | A `models:` key ≠ that export's `model.key` (the message names the computed key) |
 | `seam-duplicate` | warning | The same `(from, to)` binding declared twice: a ref repeated in `consumes`, or a 1.0 seam that a `consumes` clause already declares |

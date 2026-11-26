@@ -674,7 +674,7 @@ export const RULES = {
   "system-manifest-invalid": {
     severity: "error",
     title: "Seam manifest invalid",
-    fix: "Fix the manifest: `systemSchemaVersion: \"2.0\"`, `models:` with a readable `source` per model, and nothing else (`seams:`/`owner:` moved into the models — run `em upgrade`).",
+    fix: "Fix the manifest: `systemSchemaVersion: \"2.0\"` (or `\"2.1\"` to declare `repos:`), `models:` with a readable `source` per model, and nothing else (`seams:`/`owner:` moved into the models — run `em upgrade`).",
     usageCategory: "seam manifest invalid",
     docAnchor: "seam-manifest",
   },
