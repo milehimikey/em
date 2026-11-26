@@ -15,7 +15,7 @@ Inputs: the slice doc, the project constitution, and the pull request. Use Bash 
 Review three things:
 
 - Spec fidelity: the code and tests do what each field, invariant, and scenario in the slice doc says, and nothing the doc does not say.
-- Slice isolation: nothing outside this slice's package changed; no reach into another slice or shared infrastructure.
+- Slice isolation: nothing outside this slice's package changed; no reach into another slice or shared infrastructure. For a work unit, nothing outside the unit's place changed (see "Work unit").
 - Constitution conformance: layout, naming, testing, and branch norms.
 
 ## Work unit

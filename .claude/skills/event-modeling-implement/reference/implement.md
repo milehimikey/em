@@ -570,6 +570,27 @@ unit's PR cites it. What a unit's implementer is given, and does differently:
   citing its id; the others are named as another unit's. `em coverage … --strict` over the whole
   slice is the lead's check once every unit has reported, not one unit's.
 
+### Isolation, per unit
+
+§8 rule 3 says a slice never creates, edits or reaches into another slice's code. For a work
+unit the same rule is drawn one level tighter: **nothing outside this unit's place.** A unit's
+place is the repository and the roots the code map gives its elements (the brief lists them),
+and inside those, the slice's own package under the constitution's layout rule.
+
+- **Another repository is always outside.** That includes the slice's sibling units: the other
+  half of your own slice is not yours to edit, even when a one-line change there would make the
+  two fit. If the halves do not fit, that is a gap in the spec or in the contract. Stop and
+  report it.
+- **Another root of the same repository is outside too**, unless the brief lists it among the
+  unit's roots. Two places in one repository with different roots are one unit, and the brief
+  then names both.
+- **What a unit may read:** the slice doc, the model and the constitution in the model's
+  repository; the slice's contract; and the sibling units' pull requests, as context for how the
+  halves meet. Reading is never a licence to reach in.
+- **Events are still imported, only events** (§8 rule 3), from wherever the foundation placed
+  them in the unit's own repository. An event another repository owns reaches a unit through
+  the contract, not through that repository's source.
+
 ## 10. Never do
 
 | Rule | Because |
@@ -583,6 +604,7 @@ unit's PR cites it. What a unit's implementer is given, and does differently:
 | Never regenerate merged code from the model | Generated-then-owned: post-merge code belongs to its owners |
 | Never commit an authored intermediate spec | The slice is the spec; anything between it and the code is a rendering |
 | Never open a slice PR before the foundation PR has merged | The foundation is what makes an event a stable shared contract — a slice built ahead of it is building on a moving target (§8) |
+| Never edit outside a work unit's place (§12) | A unit is one slice's code in one repository; a change in a sibling's repository is another unit's PR, reviewed by other people, and makes this one unmergeable on its own |
 | Never implement more than one slice doc in a PR | The PR is the durable record of one spec's implementation; `mark-implemented`, coverage, and conformance all key on one doc ↔ one `implementedIn` |
 | Stay on your side of the seam: never edit another model's directory, slice docs or contract file | Another model's `public` element is its owners' decision; a needed change goes to them as a seam change request, not into your PR |
 | Never hand-edit a generated contract (`contracts/*.tsp`) | It is derived from the model by `em api generate`; a hand edit is a contract change nobody ratified |
