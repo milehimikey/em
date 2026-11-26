@@ -10,6 +10,13 @@
 // owners in the manifest) is still READ — so `em system` on an unmigrated estate keeps
 // verifying — and `verifySystem` warns `system-manifest-outdated`; nothing writes 1.0 any more.
 //
+// Schema 2.1 (GH #526) adds one optional key, `repos:` — the logical repositories the system's
+// code lives in, each `{remote}`. It is the only committed list of them (the code map beside a
+// model names these ids; a per-machine file maps them to checkouts), so membership stays the
+// manifest's whole job. Additive: a 2.0 manifest is read exactly as before, and em still WRITES
+// 2.0 (the `em upgrade` migration) because nothing it writes carries `repos:`. A manifest takes
+// "2.1" only to declare `repos:`; `repos:` under "2.0" is refused with that instruction.
+//
 // YAML because the manifest is human-authored (and JSON is a YAML subset, so a `.json` manifest
 // parses here unchanged). Pure: text in, manifest + diagnostics out — the caller (src/cli/
 // systemInputs.ts) owns reading the file and resolving each model's `source` path, so this
@@ -22,8 +29,22 @@ import { pushDiag } from "../model/rules.js";
 
 // 1.0 (MIL-194): models {source, owner?} + seams [{from, to, description?}].
 // 2.0 (MIL-235): models {source} only — seams are `consumes` clauses, owners are model headers.
-/** The manifest schema version em writes and expects (`systemSchemaVersion`). */
+/** The manifest schema version em writes (`systemSchemaVersion`), and the lowest of the two
+ *  current versions it reads. */
 export const SYSTEM_MANIFEST_SCHEMA_VERSION = "2.0";
+// 2.1 (GH #526): 2.0 + optional `repos: {id: {remote}}`.
+/** The version a manifest declares to carry `repos:`. Read alongside 2.0; never written by em. */
+export const SYSTEM_MANIFEST_REPOS_SCHEMA_VERSION = "2.1";
+/** The repo id that always means "the repo the model itself lives in". Never declared in
+ *  `repos:` (it has no remote of its own to record), so it is refused there. */
+export const SELF_REPO_ID = "self";
+/** A repo id: what a repository directory can be named, so the id can double as the sibling
+ *  directory the resolver falls back to. Starts with a letter or digit, which also rules out
+ *  `.`/`..` and a leading `-`. */
+export const REPO_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+export function isRepoId(id: string): boolean {
+  return REPO_ID_RE.test(id);
+}
 /** The previous version, still accepted for reading (with a `system-manifest-outdated`
  *  warning) until a repo runs `em upgrade`'s `system-manifest` step. */
 export const LEGACY_SYSTEM_MANIFEST_SCHEMA_VERSION = "1.0";
@@ -40,6 +61,17 @@ export interface ManifestModel {
   line: number;
 }
 
+/** One `repos:` entry (schema 2.1): a logical repository the system's code lives in. */
+export interface ManifestRepo {
+  /** The logical id every other file uses for this repo (`REPO_ID_RE`; never `self`). */
+  id: string;
+  /** The repository's remote, as written — a clone URL or SCP-style address. Recorded, never
+   *  fetched: em does not clone, pull or push. */
+  remote: string;
+  /** 1-based line of the repo's entry in the manifest, for diagnostics. */
+  line: number;
+}
+
 export interface ManifestSeam {
   /** Qualified ref of the producing `public` event/view, as written. */
   from: string;
@@ -51,7 +83,7 @@ export interface ManifestSeam {
 }
 
 export interface SystemManifest {
-  /** `"2.0"`, or `"1.0"` for a legacy manifest read for compatibility. */
+  /** `"2.0"` or `"2.1"`, or `"1.0"` for a legacy manifest read for compatibility. */
   systemSchemaVersion: string;
   /** 1-based line of the `systemSchemaVersion` entry, for the `system-manifest-outdated` warning. */
   versionLine: number;
@@ -60,6 +92,9 @@ export interface SystemManifest {
   models: ManifestModel[];
   /** 1.0 manifests only (always `[]` on 2.0): the legacy declared seams, manifest order. */
   seams: ManifestSeam[];
+  /** Schema 2.1 `repos:`, manifest order; `[]` when the manifest declares none (always, on 2.0
+   *  and 1.0). */
+  repos: ManifestRepo[];
 }
 
 export type ParseManifestResult =
@@ -67,6 +102,8 @@ export type ParseManifestResult =
   | { ok: false; diagnostics: Diagnostic[] };
 
 const TOP_KEYS_V2 = new Set(["systemSchemaVersion", "name", "models"]);
+const TOP_KEYS_V2_1 = new Set(["systemSchemaVersion", "name", "models", "repos"]);
+const REPO_KEYS = new Set(["remote"]);
 const MODEL_KEYS_V2 = new Set(["source"]);
 const TOP_KEYS_V1 = new Set(["systemSchemaVersion", "name", "models", "seams"]);
 const MODEL_KEYS_V1 = new Set(["source", "owner"]);
@@ -108,16 +145,21 @@ export function parseManifest(text: string): ParseManifestResult {
   const version = scalarString(versionNode);
   if (version === undefined) {
     invalid(`missing or non-string \`systemSchemaVersion\` — set \`systemSchemaVersion: "${SYSTEM_MANIFEST_SCHEMA_VERSION}"\``, lineOf(versionNode));
-  } else if (version !== SYSTEM_MANIFEST_SCHEMA_VERSION && version !== LEGACY_SYSTEM_MANIFEST_SCHEMA_VERSION) {
+  } else if (
+    version !== SYSTEM_MANIFEST_SCHEMA_VERSION &&
+    version !== SYSTEM_MANIFEST_REPOS_SCHEMA_VERSION &&
+    version !== LEGACY_SYSTEM_MANIFEST_SCHEMA_VERSION
+  ) {
     invalid(
-      `unsupported systemSchemaVersion "${version}" — this em accepts "${SYSTEM_MANIFEST_SCHEMA_VERSION}" ` +
-        `(and reads "${LEGACY_SYSTEM_MANIFEST_SCHEMA_VERSION}" for compatibility)`,
+      `unsupported systemSchemaVersion "${version}" — this em accepts "${SYSTEM_MANIFEST_SCHEMA_VERSION}" and ` +
+        `"${SYSTEM_MANIFEST_REPOS_SCHEMA_VERSION}" (and reads "${LEGACY_SYSTEM_MANIFEST_SCHEMA_VERSION}" for compatibility)`,
       lineOf(versionNode),
     );
   }
   // An unknown/missing version is checked against 2.0's key set — the shape em writes today.
   const legacy = version === LEGACY_SYSTEM_MANIFEST_SCHEMA_VERSION;
-  const topKeys = legacy ? TOP_KEYS_V1 : TOP_KEYS_V2;
+  const withRepos = version === SYSTEM_MANIFEST_REPOS_SCHEMA_VERSION;
+  const topKeys = legacy ? TOP_KEYS_V1 : withRepos ? TOP_KEYS_V2_1 : TOP_KEYS_V2;
   const modelKeys = legacy ? MODEL_KEYS_V1 : MODEL_KEYS_V2;
 
   for (const pair of root.items) {
@@ -126,6 +168,12 @@ export function parseManifest(text: string): ParseManifestResult {
       invalid(
         `\`seams:\` is not part of systemSchemaVersion "${SYSTEM_MANIFEST_SCHEMA_VERSION}" — a seam is declared on the consuming ` +
           `translation (\`consumes <modelKey>:<kind>.<slug>\`); ${RUN_UPGRADE}`,
+        lineOf(pair),
+      );
+    } else if (!withRepos && key === "repos") {
+      invalid(
+        `\`repos:\` needs systemSchemaVersion "${SYSTEM_MANIFEST_REPOS_SCHEMA_VERSION}" — set ` +
+          `\`systemSchemaVersion: "${SYSTEM_MANIFEST_REPOS_SCHEMA_VERSION}"\` (nothing else in the manifest changes)`,
         lineOf(pair),
       );
     } else if (key === undefined || !topKeys.has(key)) {
@@ -225,10 +273,57 @@ export function parseManifest(text: string): ParseManifestResult {
     }
   }
 
+  // repos — 2.1 only: optional mapping of repo id -> { remote }.
+  const repos: ManifestRepo[] = [];
+  const reposNode = withRepos ? (root.get("repos", true) as Node | undefined) : undefined;
+  if (reposNode !== undefined && !(isScalar(reposNode) && reposNode.value === null)) {
+    if (!isMap(reposNode)) {
+      invalid("`repos` must be a mapping of repo id -> { remote }", lineOf(reposNode));
+    } else {
+      const seen = new Map<string, string>();
+      for (const pair of reposNode.items) {
+        const id = scalarString(pair.key);
+        const line = lineOf(pair) ?? lineOf(reposNode);
+        if (id === undefined || !isRepoId(id)) {
+          invalid(
+            `repo id ${describeKey(pair.key)} must be letters, digits, \`.\`, \`_\` or \`-\`, starting with a letter or digit`,
+            line,
+          );
+          continue;
+        }
+        if (id === SELF_REPO_ID) {
+          invalid(`repo id "${SELF_REPO_ID}" is reserved for the repo the model lives in — it is never declared in \`repos:\``, line);
+          continue;
+        }
+        const clash = seen.get(id.toLowerCase());
+        if (clash !== undefined) {
+          invalid(`repo id "${id}" differs from "${clash}" only by case — ids must be distinct on a case-insensitive filesystem`, line);
+          continue;
+        }
+        seen.set(id.toLowerCase(), id);
+        const entry = pair.value as Node | null;
+        if (!isMap(entry)) {
+          invalid(`repo "${id}" must be a mapping with a \`remote\``, line);
+          continue;
+        }
+        for (const p of entry.items) {
+          const k = scalarString(p.key);
+          if (k === undefined || !REPO_KEYS.has(k)) invalid(`repo "${id}": unknown key ${describeKey(p.key)} — expected ${[...REPO_KEYS].join(", ")}`, lineOf(p));
+        }
+        const remote = scalarString(entry.get("remote", true) as Node | undefined);
+        if (remote === undefined || remote.trim() === "" || /\s/.test(remote.trim())) {
+          invalid(`repo "${id}": \`remote\` must be a non-empty string with no whitespace (a clone URL or \`git@host:owner/repo.git\`)`, line);
+          continue;
+        }
+        repos.push({ id, remote: remote.trim(), line: line ?? 1 });
+      }
+    }
+  }
+
   if (diagnostics.length > 0) return { ok: false, diagnostics };
   return {
     ok: true,
-    manifest: { systemSchemaVersion: version!, versionLine: lineOf(versionNode) ?? 1, name, models, seams },
+    manifest: { systemSchemaVersion: version!, versionLine: lineOf(versionNode) ?? 1, name, models, seams, repos },
     diagnostics,
   };
 }

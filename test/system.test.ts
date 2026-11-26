@@ -94,6 +94,7 @@ function manifestOf(models: SystemModelInput[], seams: Array<{ from: string; to:
     systemSchemaVersion: seams.length > 0 ? LEGACY_SYSTEM_MANIFEST_SCHEMA_VERSION : SYSTEM_MANIFEST_SCHEMA_VERSION,
     versionLine: 1,
     name: "Test System",
+    repos: [],
     models: models.map((m, i) => ({ key: m.key, source: m.source, owner: null, line: 4 + i * 2 })),
     seams: seams.map((s, i) => ({ from: s.from, to: s.to, description: s.description ?? null, line: 20 + i * 3 })),
   };
@@ -103,6 +104,64 @@ function manifestOf(models: SystemModelInput[], seams: Array<{ from: string; to:
 const withoutOutdated = <T extends { code: string }>(ds: T[]) => ds.filter((d) => d.code !== "system-manifest-outdated");
 
 const SEAM = { from: "checkout:place/event.order-placed", to: "fulfillment:intake/translation.order-received" };
+
+describe("parseManifest: repos (schema 2.1, GH #526)", () => {
+  const head = (v: string) => `systemSchemaVersion: "${v}"\nname: Storefront\nmodels:\n  checkout: {source: models/checkout/checkout.em}\n`;
+
+  it("reads repos in manifest order, each with its remote and line", () => {
+    const r = parseManifest(
+      head("2.1") + `repos:\n  storefront-web: {remote: "git@github.com:acme/storefront-web.git"}\n  Checkout.Svc_2:\n    remote: https://github.com/acme/checkout-svc.git\n`,
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.manifest.systemSchemaVersion).toBe("2.1");
+    expect(r.manifest.repos).toEqual([
+      { id: "storefront-web", remote: "git@github.com:acme/storefront-web.git", line: 6 },
+      { id: "Checkout.Svc_2", remote: "https://github.com/acme/checkout-svc.git", line: 7 },
+    ]);
+    expect(r.manifest.models.map((m) => m.key)).toEqual(["checkout"]);
+  });
+
+  it("a 2.1 manifest with no repos, and a 2.0 manifest, both read with repos: []", () => {
+    for (const v of ["2.0", "2.1"]) {
+      const r = parseManifest(head(v));
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.manifest.repos).toEqual([]);
+    }
+    const empty = parseManifest(head("2.1") + "repos:\n");
+    expect(empty.ok).toBe(true);
+  });
+
+  it("refuses repos: under 2.0 and says which version to set", () => {
+    const r = parseManifest(head("2.0") + `repos:\n  web: {remote: "x"}\n`);
+    expect(r.ok).toBe(false);
+    expect(r.diagnostics.map((d) => d.message).join("\n")).toContain('`repos:` needs systemSchemaVersion "2.1"');
+    expect(r.diagnostics[0].line).toBe(5);
+  });
+
+  it.each([
+    [`repos:\n  self: {remote: "x"}\n`, 'repo id "self" is reserved'],
+    [`repos:\n  "bad id": {remote: "x"}\n`, 'repo id "bad id" must be letters'],
+    [`repos:\n  -web: {remote: "x"}\n`, 'repo id "-web" must be letters'],
+    [`repos:\n  web: {remote: "x"}\n  Web: {remote: "y"}\n`, 'differs from "web" only by case'],
+    [`repos:\n  web: "git@github.com:acme/web.git"\n`, 'repo "web" must be a mapping with a `remote`'],
+    [`repos:\n  web: {}\n`, 'repo "web": `remote` must be a non-empty string'],
+    [`repos:\n  web: {remote: "two words"}\n`, 'repo "web": `remote` must be a non-empty string'],
+    [`repos:\n  web: {remote: "x", path: "../web"}\n`, 'repo "web": unknown key "path"'],
+    [`repos: [web]\n`, "`repos` must be a mapping"],
+  ])("refuses %j", (tail, message) => {
+    const r = parseManifest(head("2.1") + tail);
+    expect(r.ok).toBe(false);
+    expect(r.diagnostics.every((d) => d.code === "system-manifest-invalid")).toBe(true);
+    expect(r.diagnostics.map((d) => d.message).join("\n")).toContain(message);
+  });
+
+  it("still refuses seams: and owner: in a 2.1 manifest", () => {
+    const r = parseManifest(`systemSchemaVersion: "2.1"\nmodels:\n  a: {source: a.em, owner: Team}\nseams: []\n`);
+    expect(r.ok).toBe(false);
+    expect(r.diagnostics.map((d) => d.message).join("\n")).toMatch(/`seams:` is not part of[\s\S]*`owner:` is not part of|`owner:` is not part of[\s\S]*`seams:` is not part of/);
+  });
+});
 
 describe("parseManifest", () => {
   it("parses the 2.0 shape: name + models {key: {source}} only", () => {
@@ -126,6 +185,7 @@ models:
         { key: "fulfillment", source: "models/fulfillment/fulfillment.em", owner: null, line: 6 },
       ],
       seams: [],
+      repos: [],
     });
   });
 
@@ -202,7 +262,7 @@ seams:
     [
       "unsupported version",
       `systemSchemaVersion: "3.0"\nmodels:\n  a:\n    source: a.em\n`,
-      /^unsupported systemSchemaVersion "3\.0" — this em accepts "2\.0" \(and reads "1\.0" for compatibility\)$/,
+      /^unsupported systemSchemaVersion "3\.0" — this em accepts "2\.0" and "2\.1" \(and reads "1\.0" for compatibility\)$/,
     ],
     ["unknown top-level key (a typo'd `seam:` must not silently declare nothing)", `systemSchemaVersion: "1.0"\nmodels:\n  a:\n    source: a.em\nseam: []\n`, /unknown top-level key "seam"/],
     ["unknown 2.0 model key", `systemSchemaVersion: "2.0"\nmodels:\n  a:\n    source: a.em\n    team: x\n`, /model "a": unknown key "team" — expected source$/],
