@@ -227,6 +227,10 @@ export function querySlices(system: QuerySystem, filters: SliceFilters): VerbRes
   const results: SliceQueryEntry[] = [];
   for (const entry of system.entries) {
     const modelPlaces = loadModelPlaces(entry.file, entry.model, entry.refs);
+    if (filters.repo !== undefined && modelPlaces.kind === "invalid") {
+      // "(none)" would read as "no slice has code there"; the map could not be read at all.
+      return err(`em query slices: --repo ${filters.repo}: ${entry.file}'s ${modelPlaces.diagnostics[0]?.message ?? "code-map.yaml cannot be used"} — run \`em validate\``);
+    }
     entry.model.slices.forEach((slice, i) => {
       const key = entry.refs.sliceKeys[i];
       const pattern = classifySlicePattern(slice);

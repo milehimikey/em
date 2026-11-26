@@ -1088,7 +1088,7 @@ root.
       {
         "key": "take-payment",
         "elements": [
-          { "ref": "take-payment/processor.charge-card", "places": [{ "repo": "self", "root": "services/orders" }], "placedBy": "default" },
+          { "ref": "take-payment/processor.charge-card", "places": [{ "repo": "self", "root": "services/orders" }], "placedBy": "reads" },
           { "ref": "take-payment/command.take-payment", "places": [{ "repo": "payments-svc", "root": "" }], "placedBy": "context" }
         ],
         "places": [{ "repo": "self", "root": "services/orders" }, { "repo": "payments-svc", "root": "" }]
@@ -1102,7 +1102,7 @@ root.
 | Key | Meaning |
 |---|---|
 | `element.places` | Where the element lives. One place from any code-map rule, one per root when `Code roots:` placed it; `[]` when the map does not place it (`em validate` reports `code-map-element-unplaced`) |
-| `element.placedBy` | The rule that placed it: `"element"` (an override), `"persona"`, `"context"`, `"default"`, or `"code-roots"` (GH #530: the map has no `default:`, so the state file's `Code roots:` placed it, one place in `self` per root); `null` when unplaced. The routing rules are in [code-map-schema.md](code-map-schema.md#routing) |
+| `element.placedBy` | The rule that placed it: `"element"` (an override), `"persona"`, `"context"`, `"reads"` (a reaction placed where what it reads lives), `"default"`, or `"code-roots"` (GH #530: the map has no `default:`, so the state file's `Code roots:` placed it, one place in `self` per root); `null` when unplaced. The routing rules are in [code-map-schema.md](code-map-schema.md#routing) |
 | `slice.places` | The places of that slice's elements, each once, in first-appearance order. Two entries with different `repo` mean the slice's code is in two repositories |
 | `model.places` | Every place the model uses, each once, in first-appearance order |
 
@@ -5760,7 +5760,8 @@ purpose — that judgment call belongs to the agent, one level up (`reference/co
 therefore also placed in a slice when that slice's bindings manifest
 ([`conformance/bindings/<slice-key>.yaml`](bindings.md)) names exactly that file, in `elements[].file`
 or an invariant's `enforcedIn.file`/`testedIn.file`. The match is on the whole repo-relative path,
-never a prefix. A slice with no manifest, or a malformed one, contributes nothing here
+never a prefix. A bound `file` is relative to `--repo` as given, so when `--repo` names a
+sub-directory of its work tree the file is matched under that sub-directory. A slice with no manifest, or a malformed one, contributes nothing here
 (`em conform bindings check` is what reports a malformed file). A slice with neither a path in
 `implementedIn` nor a manifest is still never a diff-scoped candidate; its changed files come back
 in `unmappedPaths`.

@@ -104,7 +104,7 @@ describe("derived places (GH #529)", () => {
     ]);
     // The Automation slice: the processor lives with its trigger, the command with its event.
     expect(slice("take-payment").places).toEqual([ORDERS, PAY]);
-    expect(slice("take-payment").elements.map((e: any) => e.placedBy)).toEqual(["default", "context", "context"]);
+    expect(slice("take-payment").elements.map((e: any) => e.placedBy)).toEqual(["reads", "context", "context"]);
     expect(slice("charged-orders").places).toEqual([ORDERS]);
     // New keys come last on each object.
     expect(Object.keys(slice("place-order")).slice(-2)).toEqual(["elements", "places"]);
@@ -133,6 +133,15 @@ describe("derived places (GH #529)", () => {
       { severity: "error", code: "code-map-invalid", message: 'code-map.yaml: `default`: unknown key "path" — expected repo, root', line: 2, refs: [] },
     ]);
     expect(em(["validate", "shop.em"], dir).status).toBe(1);
+  });
+
+  it("query slices --repo with a code map that does not parse is an error, not (none)", () => {
+    writeFileSync(mapPath(), `codeMapSchemaVersion: "1.0"\ndefault: {repo: payments-svc, path: x}\n`);
+    const r = em(["query", "slices", "shop.em", "--repo", "payments-svc"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("code-map.yaml: `default`: unknown key \"path\"");
+    // Without --repo the query does not depend on the map and still answers.
+    expect(em(["query", "slices", "shop.em"], dir).status).toBe(0);
   });
 
   it("query slices: places on each result, in text and --json, and --repo filters", () => {

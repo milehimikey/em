@@ -69,6 +69,7 @@ describe("normalizeRemote", () => {
     const forms = ["git@github.com:Acme/Web.git", "ssh://git@github.com/acme/web", "https://github.com/acme/web.git/", "https://token@github.com/acme/web", "ssh://git@github.com:22/acme/web.git"];
     expect(new Set(forms.map(normalizeRemote))).toEqual(new Set(["github.com/acme/web"]));
     expect(normalizeRemote("git@github.com:acme/other.git")).toBe("github.com/acme/other");
+    expect(normalizeRemote("github.com:acme/web.git")).toBe("github.com/acme/web"); // scp form with no user
   });
 });
 

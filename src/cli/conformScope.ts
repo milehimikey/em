@@ -118,6 +118,7 @@ export function buildConformScope(
   lastConformance: LastConformance | null,
   changedPaths: string[],
   full: boolean,
+  boundPrefix = "",
 ): ConformScopeJson {
   const lastConformanceOut = lastConformance
     ? { date: lastConformance.date, revision: lastConformance.revision, partial: lastConformance.partial }
@@ -134,7 +135,7 @@ export function buildConformScope(
   const candidateSlices: CandidateSlice[] = [];
   for (const s of slices) {
     const byLink = matchImplementedInToPaths(s.implementedIn, changedPaths);
-    const bound = new Set(s.boundFiles ?? []);
+    const bound = new Set((s.boundFiles ?? []).map((f) => (boundPrefix === "" ? f : `${boundPrefix}/${f}`)));
     // Both sources count; `paths` keeps `changedPaths` order, each path once.
     const paths = bound.size === 0 ? byLink : changedPaths.filter((p) => byLink.includes(p) || bound.has(p));
     if (paths.length === 0) continue;
@@ -186,7 +187,10 @@ export function resolveSliceDocFacts(model: NormalizedModel, refs: RefsResult, b
   return { facts, diagnostics };
 }
 
-export type ChangedPathsResult = { ok: true; paths: string[] } | { ok: false; message: string };
+/** `boundPrefix`: where `repo` (as given) sits inside its work tree, posix, `""` at the root.
+ *  A bindings manifest's `file` is relative to `--repo`, changed paths are relative to the work
+ *  tree's root, so the two only compare once the bound file carries this prefix. */
+export type ChangedPathsResult = { ok: true; paths: string[]; boundPrefix: string } | { ok: false; message: string };
 
 /**
  * `git diff --name-only <revision>..HEAD`, run from `repo` (any directory inside the target
@@ -207,12 +211,14 @@ export function changedPathsSince(repo: string, revision: string, runGit: GitRun
       message: `em conform-scope: git diff failed: ${(diff.stderr || "").trim() || `unknown revision "${revision}"`}`,
     };
   }
+  const prefix = runGit(["-C", repo, "rev-parse", "--show-prefix"]);
   return {
     ok: true,
     paths: diff.stdout
       .split("\n")
       .map((s) => s.trim())
       .filter(Boolean),
+    boundPrefix: prefix.status === 0 ? prefix.stdout.trim().replace(/\/+$/, "") : "",
   };
 }
 
@@ -289,7 +295,11 @@ export function entryPaths(entries: ChangedEntry[]): string[] {
 
 /** Staged paths only (both sides of a rename), repo-root-relative — the `--staged` twin of
  *  `changedPathsSince`. */
-export function changedPathsStaged(repo: string, runGit: GitRunner = realGit, label = "em conform-scope"): ChangedPathsResult {
+export function changedPathsStaged(
+  repo: string,
+  runGit: GitRunner = realGit,
+  label = "em conform-scope",
+): { ok: true; paths: string[] } | { ok: false; message: string } {
   const r = changedEntriesStaged(repo, runGit, label);
   if (!r.ok) return r;
   return { ok: true, paths: entryPaths(r.entries) };
