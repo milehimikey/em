@@ -1,0 +1,18 @@
+# One bindings file per slice, in the model's repository. Schema 1.1: each binding names the
+# repository its `file` is relative to, because this slice's code is in two.
+bindingsSchemaVersion: "1.1"
+slice: place-order
+elements:
+  - ref: ui.checkout
+    repo: storefront-web
+    file: src/checkout/CheckoutPage.tsx
+    identifier: CheckoutPage
+  - ref: command.place-order
+    repo: checkout-svc
+    file: src/orders/PlaceOrderHandler.kt
+    identifier: placeOrder
+  - ref: event.order-placed
+    repo: checkout-svc
+    file: src/orders/Events.kt
+    identifier: OrderPlaced
+invariants: []
