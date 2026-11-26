@@ -23,7 +23,7 @@
 // anything but that order and plain string order for stable tie-breaks.
 
 import { existsSync } from "node:fs";
-import { NormalizedModel, collectModelInvariants, collectTags } from "../model/model.js";
+import { Element, NormalizedModel, collectModelInvariants, collectTags } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { resolveSliceKey } from "../model/resolveSlice.js";
 import { Diagnostic, serializeDiagnostic } from "../model/validate.js";
@@ -60,6 +60,8 @@ import {
 import { shapeRuleCodes } from "./shape.js";
 import { isPublicTouchingSlice } from "../catalog/apiFirst.js";
 import { ENGAGEMENT_SCHEMA_VERSION } from "../emit/engagementJson.js";
+import { loadModelPlaces } from "../codemap/modelPlaces.js";
+import { deriveUnits, EngagementPlanUnit } from "./engagementUnits.js";
 
 /** Everything a plan/status needs about one compiled model — what both the CLI action and the
  *  MCP tool already hold after compiling (MCP parity: same input, same builder). */
@@ -443,7 +445,16 @@ export interface EngagementPlanLevel {
  *  implementer would otherwise rediscover and report on its own. Advisory: never a hold, never
  *  written to the Ledger; the lead puts the whole list to the human in ONE question round before
  *  fan-out (skill §2). Each finding names the slices it spans so the answer lands once. */
-export type PreflightKind = "repeated-invariant" | "event-without-tag" | "shared-trigger" | "doc-model-mismatch" | "shape" | "pr-title-fallback" | "context-missing";
+export type PreflightKind =
+  | "repeated-invariant"
+  | "event-without-tag"
+  | "shared-trigger"
+  | "doc-model-mismatch"
+  | "shape"
+  | "pr-title-fallback"
+  | "context-missing"
+  /** GH #536: an element of an engagement slice the code map does not place, so it is in no work unit. */
+  | "element-unplaced";
 
 export interface PreflightFinding {
   kind: PreflightKind;
@@ -473,6 +484,11 @@ export interface EngagementPlan {
    *  the exact command(s) that ratify them — one batch for the non-public-touching ones, one single
    *  command per public-touching one. Information only: never a hold. `[]` when none. */
   ratifyAtHandoff: RatifyAtHandoffEntry[];
+  /** GH #536 (plan schema 1.7): the unit graph — one node per work unit (slice × repo) and one
+   *  closing step per slice, with `dependsOn` and `partOf` (engagementUnits.ts). Present only
+   *  when the model has a code map; absent otherwise, where every slice is its own single unit
+   *  and the document is what it was. */
+  units?: EngagementPlanUnit[];
 }
 
 export interface RatifyAtHandoffEntry {
@@ -717,7 +733,23 @@ export function buildEngagementPlan(input: EngagementModelInput, engagementFile:
       message: `context document "${path}" does not exist — add it before fan-out, or remove it from the engagement's context: list`,
     });
   }
-  return { ok: true, plan: { file: input.file, engagement: engagementFile, slug: eng.slug, status: eng.status, tracking: eng.tracking, prTitle: eng.prTitle, context: eng.context, parallel: eng.parallel, levels, slices, preflight, ratifyAtHandoff: computeRatifyAtHandoff(input, slices) } };
+  // GH #536: the unit graph, for a model whose code map says where its code lives.
+  const places = loadModelPlaces(input.file, input.model, input.refs);
+  let units: EngagementPlanUnit[] | undefined;
+  if (places.kind === "ok") {
+    const elementsOf = (key: string): Element[] => input.model.elements.filter((el) => unitOfElement(input.model, idx, el.id) === key);
+    const derived = deriveUnits(input.model, input.refs, input.file, places, slices, elementsOf);
+    units = derived.units;
+    for (const u of derived.unplaced) {
+      preflight.push({
+        kind: "element-unplaced",
+        subject: u.slice,
+        slices: [u.slice],
+        message: `slice ${u.slice}: ${u.refs.join(", ")} ${u.refs.length === 1 ? "has" : "have"} no place in code-map.yaml, so ${u.refs.length === 1 ? "it is" : "they are"} in no work unit — run \`em validate\` and place ${u.refs.length === 1 ? "it" : "them"} before dispatch`,
+      });
+    }
+  }
+  return { ok: true, plan: { ...(units === undefined ? {} : { units }), file: input.file, engagement: engagementFile, slug: eng.slug, status: eng.status, tracking: eng.tracking, prTitle: eng.prTitle, context: eng.context, parallel: eng.parallel, levels, slices, preflight, ratifyAtHandoff: computeRatifyAtHandoff(input, slices) } };
 }
 
 /** Walk predecessors among the unlevelled nodes until one repeats: `a -> b -> a` (upstream
@@ -745,6 +777,15 @@ export function formatEngagementPlanText(p: EngagementPlan): string {
       const inferred = s.stateInferred ? " (inferred)" : "";
       const track = s.tracking ? ` · tracking: ${s.tracking}` : "";
       lines.push(`  ${s.key} [${s.pattern}] ${s.branch} on ${s.base} · state: ${s.state}${inferred}${held}${track}`);
+      // GH #536: the slice's work units (one per repository its code is in), then its closing step.
+      for (const u of (p.units ?? []).filter((x) => x.partOf === s.key)) {
+        const after = u.dependsOn.length > 0 ? ` · after ${u.dependsOn.join(", ")}` : "";
+        lines.push(
+          u.kind === "close"
+            ? `    ${u.id} — closing step in the model's repository, ${u.branch}${after}`
+            : `    ${u.id} — ${u.roots.map((r) => (r === "" ? u.repo : `${u.repo}:${r}`)).join(", ")} · ${u.elements.length} element${u.elements.length === 1 ? "" : "s"}${after}`,
+        );
+      }
     }
   }
   // GH #239: the one question round before fan-out. Advisory — nothing above is held by it.
