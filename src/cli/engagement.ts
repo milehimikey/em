@@ -39,6 +39,9 @@ import { buildQuerySystem, resolveElement } from "../query/system.js";
 import {
   EngagementFile,
   EngagementSliceEntry,
+  EngagementUnitEntry,
+  deriveSliceState,
+  spliceSchemaVersion,
   LedgerState,
   LEDGER_STATES,
   LEDGER_MARKER,
@@ -59,7 +62,7 @@ import {
 } from "./engagementFile.js";
 import { shapeRuleCodes } from "./shape.js";
 import { isPublicTouchingSlice } from "../catalog/apiFirst.js";
-import { ENGAGEMENT_SCHEMA_VERSION } from "../emit/engagementJson.js";
+import { ENGAGEMENT_SCHEMA_VERSION, ENGAGEMENT_UNITS_SCHEMA_VERSION } from "../emit/engagementJson.js";
 import { loadModelPlaces } from "../codemap/modelPlaces.js";
 import { deriveUnits, EngagementPlanUnit } from "./engagementUnits.js";
 
@@ -327,6 +330,8 @@ export interface EngagementStatusSlice {
   pr: string | null;
   /** GH #241: the ticket key this slice's PR cites (slice doc `tracking:` wins over the engagement's). */
   tracking: string | null;
+  /** GH #537 (status schema 1.2): the slice's per-unit Ledger records; absent for a slice with none. */
+  units?: EngagementUnitEntry[];
 }
 
 export interface EngagementStatus {
@@ -361,6 +366,7 @@ export function buildEngagementStatus(file: string, engagementFile: string, eng:
       base: e.base,
       pr: e.pr,
       tracking: effectiveTracking(idx.docTracking.get(e.key) ?? null, eng.tracking),
+      ...(e.units ? { units: e.units } : {}),
     };
   });
   const closable = slices.every((s) => s.state === "merged" || s.state === "gap");
@@ -739,7 +745,16 @@ export function buildEngagementPlan(input: EngagementModelInput, engagementFile:
   if (places.kind === "ok") {
     const elementsOf = (key: string): Element[] => input.model.elements.filter((el) => unitOfElement(input.model, idx, el.id) === key);
     const derived = deriveUnits(input.model, input.refs, input.file, places, slices, elementsOf);
-    units = derived.units;
+    // GH #537: each node's state. A work unit's is its own Ledger record; a one-unit slice's unit
+    // is the slice's. A closing step is done once the slice doc carries a shipped record.
+    units = derived.units.map((u) => {
+      const slice = slices.find((s) => s.key === u.partOf)!;
+      const entry = entryOf.get(u.partOf)!;
+      if (u.kind === "close") return { ...u, state: (idx.docShipped.get(u.partOf) ?? false) && !(idx.docOpenRevision.get(u.partOf) ?? false) ? ("merged" as LedgerState) : ("planned" as LedgerState), pr: null };
+      const recorded = entry.units?.find((x) => x.repo === u.repo);
+      if (recorded) return { ...u, state: recorded.state, pr: recorded.pr };
+      return entry.units ? { ...u, state: "planned" as LedgerState, pr: null } : { ...u, state: slice.state, pr: entry.pr };
+    });
     for (const u of derived.unplaced) {
       preflight.push({
         kind: "element-unplaced",
@@ -930,6 +945,18 @@ export interface SetOptions {
   branch?: string;
   base?: string;
   pr?: string;
+  /** GH #537: the repo id of the work unit to record (`--unit`). */
+  unit?: string;
+}
+
+/** GH #537: the repo ids of a slice's work units, from the code map, in the plan's order; `null`
+ *  when the model has no code map (every slice is then one unit, and there is no `--unit`). */
+export function workUnitReposOf(input: { file: string; model: NormalizedModel; refs: RefsResult }, idx: UnitIndex, key: string): string[] | null {
+  const places = loadModelPlaces(input.file, input.model, input.refs);
+  if (places.kind !== "ok") return null;
+  const elementsOf = (k: string): Element[] => input.model.elements.filter((el) => unitOfElement(input.model, idx, el.id) === k);
+  const { units } = deriveUnits(input.model, input.refs, input.file, places, [{ key, level: 0, branch: "", base: "", prTitle: "" }], elementsOf);
+  return units.filter((u) => u.kind === "unit").map((u) => u.repo);
 }
 
 export type SetResult = { ok: true; changed: boolean; text: string; entry: EngagementSliceEntry } | { ok: false; message: string };
@@ -947,22 +974,60 @@ export function applyEngagementSet(
   if (eng.status === "closed") return { ok: false, message: `engagement "${slug}" is closed` };
   const current = eng.slices.find((e) => e.key === opts.key);
   if (!current) return { ok: false, message: `slice "${opts.key}" is not in engagement "${slug}"` };
-  const next: EngagementSliceEntry = {
-    key: current.key,
-    state: opts.state,
-    branch: opts.branch ?? current.branch,
-    base: opts.base ?? current.base,
-    pr: opts.pr ?? current.pr,
-  };
-  if (opts.state === "held") next.heldBy = "human";
+  const idx = buildUnitIndex(input.model, input.refs, input.baseDir);
+  // GH #537: a slice whose code is in more than one repository is recorded unit by unit, and its
+  // own state follows from its units — so it can only be `merged` when every unit is.
+  const repos = workUnitReposOf(input, idx, opts.key);
+  const multi = repos !== null && repos.length > 1;
+  let next: EngagementSliceEntry;
+  let raiseVersion = false;
+  if (opts.unit !== undefined) {
+    if (repos === null) return { ok: false, message: `--unit ${opts.unit}: the model has no code-map.yaml, so slice "${opts.key}" is one unit — drop --unit` };
+    if (!repos.includes(opts.unit)) {
+      return { ok: false, message: `--unit ${opts.unit}: slice "${opts.key}" has no work unit in repo "${opts.unit}" — its units are in: ${repos.join(", ") || "(none: its elements are unplaced)"}` };
+    }
+  } else if (multi || current.units) {
+    const where = (current.units?.map((u) => u.repo) ?? repos ?? []).join(", ");
+    return { ok: false, message: `slice "${opts.key}" has ${multi ? repos!.length : current.units!.length} work units (${where}) — record each with --unit <repo>; the slice's state follows from them` };
+  }
+  if (opts.unit !== undefined && multi) {
+    const recorded = new Map((current.units ?? []).map((u) => [u.repo, u]));
+    // Every unit the code map gives the slice has a record; one the map no longer gives it is kept.
+    const units: EngagementUnitEntry[] = [
+      ...repos!.map((r) => recorded.get(r) ?? { repo: r, state: "planned" as LedgerState, branch: null, base: null, pr: null }),
+      ...(current.units ?? []).filter((u) => !repos!.includes(u.repo)),
+    ];
+    const i = units.findIndex((u) => u.repo === opts.unit);
+    const before = units[i];
+    const after: EngagementUnitEntry = { repo: before.repo, state: opts.state, branch: opts.branch ?? before.branch, base: opts.base ?? before.base, pr: opts.pr ?? before.pr };
+    const unchanged = current.units !== undefined && JSON.stringify(after) === JSON.stringify(before);
+    if (before.state === "merged" && !unchanged) return { ok: false, message: `unit "${opts.key}@${opts.unit}" is merged — merged is terminal` };
+    if (unchanged) return { ok: true, changed: false, text, entry: current };
+    units[i] = after;
+    const state = deriveSliceState(units);
+    next = { key: current.key, state, branch: current.branch, base: current.base, pr: current.pr, units };
+    if (state === "held") next.heldBy = "human";
+    raiseVersion = true;
+  } else {
+    // One unit (with or without a code map): the entry is the slice's one line, as always.
+    next = {
+      key: current.key,
+      state: opts.state,
+      branch: opts.branch ?? current.branch,
+      base: opts.base ?? current.base,
+      pr: opts.pr ?? current.pr,
+    };
+    if (opts.state === "held") next.heldBy = "human";
+  }
   const same = formatSliceEntryLine(next) === formatSliceEntryLine(current);
   if (current.state === "merged" && !same) return { ok: false, message: `slice "${opts.key}" is merged — merged is terminal` };
   if (same) return { ok: true, changed: false, text, entry: current };
   const spliced = spliceSliceEntry(text, next);
   if (spliced === null) return { ok: false, message: `slice "${opts.key}"'s slices entry is not on one line — the file was hand-edited; restore the one-line entry shape` };
-  const idx = buildUnitIndex(input.model, input.refs, input.baseDir);
+  const versioned = raiseVersion ? spliceSchemaVersion(spliced, ENGAGEMENT_UNITS_SCHEMA_VERSION) : spliced;
+  if (versioned === null) return { ok: false, message: "the engagementSchemaVersion line is missing — the file was hand-edited" };
   const slices = eng.slices.map((e) => (e.key === next.key ? next : e));
-  const withLedger = spliceLedger(spliced, buildLedgerLines(slices, ledgerFacts(idx, slices.map((e) => e.key))));
+  const withLedger = spliceLedger(versioned, buildLedgerLines(slices, ledgerFacts(idx, slices.map((e) => e.key))));
   if (withLedger === null) return { ok: false, message: `the Ledger markers (<!-- GENERATED:${LEDGER_MARKER}:start/end -->) are missing — the file was hand-edited` };
   return { ok: true, changed: true, text: withLedger, entry: next };
 }

@@ -281,6 +281,7 @@ em engagement set <file> <slug> [key] --state <state>               # one of: pl
 em engagement set <file> <slug> [key] --branch <name>               # the slice's branch
 em engagement set <file> <slug> [key] --base <name>                 # the branch the slice's PR targets
 em engagement set <file> <slug> [key] --pr <url>                    # the slice's PR URL
+em engagement set <file> <slug> [key] --unit <repo>                 # record one work unit of the slice — the repo id of the unit (GH #537). Required for a slice whose code is in more than one repository; its own state then follows from its units
 em engagement set <file> <slug> [key] --context-doc <path>          # repo-relative path to a document implementers need beyond the slice doc (repeatable; replaces the whole engagement-level context: list; GH #455)
 em engagement status <file> <slug>                                  # the Ledger joined with each slice doc's current status, plus whether the engagement is closable
 em engagement status <file> <slug> --json                           # print a JSON document instead of text (same document as the MCP engagement_status tool)

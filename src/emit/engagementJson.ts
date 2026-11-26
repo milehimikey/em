@@ -17,9 +17,15 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
  *  1.3 (GH #455): optional `context` — a list of repo-relative paths to documents an implementer
  *    needs beyond the slice doc (constitution, NFR docs, ADRs). 1.0, 1.1 and 1.2 files still read. */
 export const ENGAGEMENT_SCHEMA_VERSION = "1.3";
+/** 1.4 (GH #537): a slice entry may carry `units: [{repo, state, branch, base, pr}]` — one Ledger
+ *  record per work unit (slice x repository) of a slice whose code is in more than one
+ *  repository. The entry's own `state` is then derived from its units. A slice with one unit
+ *  keeps its one-line entry with no `units:`. Written (the version line is raised to it) only
+ *  the first time `em engagement set --unit` records a unit; 1.0–1.3 files still read. */
+export const ENGAGEMENT_UNITS_SCHEMA_VERSION = "1.4";
 
-/** Every `engagementSchemaVersion` this em reads; it always writes {@link ENGAGEMENT_SCHEMA_VERSION}. */
-export const ENGAGEMENT_READABLE_VERSIONS: readonly string[] = ["1.0", "1.1", "1.2", "1.3"];
+/** Every `engagementSchemaVersion` this em reads. `new` writes at most {@link ENGAGEMENT_SCHEMA_VERSION}. */
+export const ENGAGEMENT_READABLE_VERSIONS: readonly string[] = ["1.0", "1.1", "1.2", "1.3", "1.4"];
 
 // 1.0 (MIL-268): initial shape.
 // 1.1 (GH #241): additive `tracking` on the document and on each slice.
@@ -49,7 +55,9 @@ export const ENGAGEMENT_PLAN_SCHEMA_VERSION = "1.7";
 
 // 1.0 (MIL-268): initial shape.
 // 1.1 (GH #241): additive `tracking` on the document and on each slice.
-export const ENGAGEMENT_STATUS_SCHEMA_VERSION = "1.1";
+// 1.2 (GH #537, em 1.24.0): a slice with per-unit Ledger records gains `units: [{ repo, state,
+//   branch, base, pr }]`; absent for every other slice. Additive.
+export const ENGAGEMENT_STATUS_SCHEMA_VERSION = "1.2";
 
 export function buildEngagementPlanJson(plan: EngagementPlan): string {
   const doc = {

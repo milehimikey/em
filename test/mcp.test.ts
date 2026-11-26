@@ -1807,7 +1807,7 @@ describe("engagement_plan / engagement_status tools (MIL-268)", () => {
     const file = join(lendDir, "lending.em");
     const { result, doc } = await callJson(client, "engagement_status", { file, slug: "loans" });
     expect(result.isError).toBeFalsy();
-    expect(doc.engagementStatusSchemaVersion).toBe("1.1");
+    expect(doc.engagementStatusSchemaVersion).toBe("1.2");
     expect(doc.closable).toBe(false);
     const cli = em(["engagement", "status", file, "loans", "--json"], lendDir);
     expect(cli.stdout).toBe(mcpText(result) + "\n");

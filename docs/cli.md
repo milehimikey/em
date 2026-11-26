@@ -3000,6 +3000,7 @@ publishes them as `units`:
 | `level` | The slice's level |
 | `branch`, `base` | The branch to cut in `repo` (the same name in every repository the slice touches) and `main`: unit pull requests never stack |
 | `prTitle` | The slice's resolved title; a closing step's ends ` [close]` |
+| `state`, `pr` | Where the node stands (plan schema `1.7`, GH #537). A work unit's Ledger state and recorded PR URL: its own record for a slice in several repositories, the slice's for a one-unit slice. A closing step is `merged` once the slice doc records the slice as shipped, `planned` until then; its `pr` is `null` |
 | `marker` | The exact line to put in the pull request body. With `branch`, it is the join key: a slice's pull requests can be found on the forge by `Em-Unit: <modelKey>:<sliceKey>@` |
 | `dependsOn` | Ids of the nodes this one waits for |
 
@@ -3178,7 +3179,7 @@ the filesystem for them). The MCP `engagement_brief` tool returns the same docum
 Refusals (exit 1, stderr) match `plan`'s posture — no partial brief: an unreadable/invalid
 engagement file, an engagement naming a slice the model no longer has, or an unknown `--slice`.
 
-### `em engagement set <file> <slug> [<key>] [--state <state>] [--branch <b>] [--base <b>] [--pr <url>] [--context-doc <path>]...`
+### `em engagement set <file> <slug> [<key>] [--state <state>] [--branch <b>] [--base <b>] [--pr <url>] [--unit <repo>] [--context-doc <path>]...`
 
 This is the only write path to the Ledger. States: `planned | building | validating | review |
 awaiting-merge | merged | held | gap`. Any state can be set. With `<key>` and `--state`, `set`
@@ -3190,6 +3191,15 @@ and omitted ones are kept.
 - **`merged` is terminal:** any different `set` afterwards is refused (`slice "<key>" is merged —
   merged is terminal`).
 - **`--state held`** records `heldBy: human`. Setting any other state drops it.
+- **`--unit <repo>`** (since 1.24.0, GH #537) records one **work unit** of the slice: its code in
+  one repository, named by repo id as in the plan's `units[].repo`. It is required for a slice
+  whose code is in more than one repository, where a set without it is refused (`slice "<key>"
+  has 2 work units (…) — record each with --unit <repo>`). `--state`/`--branch`/`--base`/`--pr`
+  then apply to that unit, `merged` is terminal per unit, and the slice's own state is derived:
+  `merged` only when every unit is, `held` or `gap` when any is, else its least advanced unit's
+  ([engagement-schema.md](engagement-schema.md#units-a-slice-in-more-than-one-repository-schema-14)).
+  For a slice with one unit, `--unit` is accepted and changes nothing about what is written.
+  Without a code map there are no units to name and `--unit` is refused.
 - Refusals: `slice "<key>" is not in engagement "<slug>"`, `invalid --state "<s>" — expected one
   of: …`, `engagement "<slug>" is closed`, `no engagement "<slug>" (expected <path>)`, `a slice
   export key is required (or pass --context-doc to set the engagement-level context: list)`,

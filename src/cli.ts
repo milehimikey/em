@@ -3892,13 +3892,14 @@ engagement
   .option("--branch <name>", "the slice's branch")
   .option("--base <name>", "the branch the slice's PR targets")
   .option("--pr <url>", "the slice's PR URL")
+  .option("--unit <repo>", "record one work unit of the slice — the repo id of the unit (GH #537). Required for a slice whose code is in more than one repository; its own state then follows from its units")
   .option(
     "--context-doc <path>",
     "repo-relative path to a document implementers need beyond the slice doc (repeatable; replaces the whole engagement-level context: list; GH #455)",
     (value: string, previous: string[]) => [...previous, value],
     [] as string[],
   )
-  .action((file: string, slug: string, key: string | undefined, opts: { state?: string; branch?: string; base?: string; pr?: string; contextDoc: string[] }) => {
+  .action((file: string, slug: string, key: string | undefined, opts: { state?: string; branch?: string; base?: string; pr?: string; unit?: string; contextDoc: string[] }) => {
     const fail = (m: string): never => {
       console.error(`em engagement set: ${m}`);
       process.exit(1);
@@ -3929,14 +3930,15 @@ engagement
     // "is not in engagement" refusal (which names what the Ledger holds) still speaks.
     const resolved = resolveSliceKey(model, refs, key);
     if (resolved.ok) key = resolved.key;
-    const result = applyEngagementSet({ file, model, refs, baseDir: dirname(file) }, slug, loaded.text, loaded.file, { key, state: opts.state, branch: opts.branch, base: opts.base, pr: opts.pr });
+    const result = applyEngagementSet({ file, model, refs, baseDir: dirname(file) }, slug, loaded.text, loaded.file, { key, state: opts.state, branch: opts.branch, base: opts.base, pr: opts.pr, unit: opts.unit });
     if (!result.ok) return fail(result.message);
+    const unitOf = result.entry.units?.find((u) => u.repo === opts.unit);
     if (!result.changed) {
-      console.log(`no change: ${key} is already ${result.entry.state} (${loaded.path})`);
+      console.log(`no change: ${unitOf ? `${key}@${unitOf.repo} is already ${unitOf.state}` : `${key} is already ${result.entry.state}`} (${loaded.path})`);
       return;
     }
     writeFileSync(loaded.path, result.text);
-    console.log(`set ${key}: ${result.entry.state} (${loaded.path})`);
+    console.log(unitOf ? `set ${key}@${unitOf.repo}: ${unitOf.state} — slice ${key}: ${result.entry.state} (${loaded.path})` : `set ${key}: ${result.entry.state} (${loaded.path})`);
   });
 
 engagement
