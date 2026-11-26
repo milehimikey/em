@@ -147,7 +147,8 @@ function expandHome(path: string): string {
  *  name one repository: compare them as lowercase `host/owner/repo`. */
 export function normalizeRemote(remote: string): string {
   let r = remote.trim();
-  const scp = /^[\w.-]+@([\w.-]+):(.+)$/.exec(r);
+  // scp-like `[user@]host:path` — no scheme, and the colon is not followed by `//`.
+  const scp = r.includes("://") ? null : /^(?:[\w.-]+@)?([\w.-]+):(?!\/)(.+)$/.exec(r);
   if (scp) r = `${scp[1]}/${scp[2]}`;
   else r = r.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/^[^@/]+@/, "").replace(/^([^/:]+):\d+\//, "$1/");
   return r.replace(/\/+$/, "").replace(/\.git$/i, "").toLowerCase();

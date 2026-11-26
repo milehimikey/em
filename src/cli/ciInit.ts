@@ -351,14 +351,18 @@ export const CI_PR_PATHS: readonly string[] = [
   "**/em-policy.yaml",
   "**/system.yaml",
   "**/contracts/**",
+  // 1.24.0: `em validate` checks a model's code map, so a PR that only edits one must run it.
+  "**/code-map.yaml",
 ];
 
-/** The lists earlier em versions generated, oldest first: the pre-1.19 three entries, and the
- *  1.19-1.22 list (everything but `em-policy.yaml`, which 1.23.0 added). A workflow carrying one of
- *  these exactly was never hand-edited, so the refresh may replace it. */
+/** The lists earlier em versions generated, oldest first: the pre-1.19 three entries, the
+ *  1.19-1.22 list (no `em-policy.yaml`, which 1.23.0 added, and no `code-map.yaml`), and the 1.23
+ *  list (everything but `code-map.yaml`, which 1.24.0 added). A workflow carrying one of these
+ *  exactly was never hand-edited, so the refresh may replace it. */
 const GENERATED_CI_PR_PATHS: readonly (readonly string[])[] = [
   CI_PR_PATHS.slice(0, 3),
-  CI_PR_PATHS.filter((p) => p !== "**/em-policy.yaml"),
+  CI_PR_PATHS.filter((p) => p !== "**/em-policy.yaml" && p !== "**/code-map.yaml"),
+  CI_PR_PATHS.filter((p) => p !== "**/code-map.yaml"),
 ];
 
 /** GH #346: rewrite the legacy filter of the workflow at `path` in place; true when it changed.

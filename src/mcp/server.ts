@@ -872,13 +872,15 @@ export function createServer(): McpServer {
 
       const skipGit = full || lastConformance === null;
       let changedPaths: string[] = [];
+      let boundPrefix = "";
       if (!skipGit) {
         const result = changedPathsSince(repo, lastConformance!.revision);
         if (!result.ok) return errorResult(result.message);
         changedPaths = result.paths;
+        boundPrefix = result.boundPrefix;
       }
 
-      const scope = buildConformScope(facts, lastConformance, changedPaths, full);
+      const scope = buildConformScope(facts, lastConformance, changedPaths, full, boundPrefix);
       const output: Record<string, unknown> = { ...scope };
       if (stateFileMismatch) {
         output.stateFile = { error: stateFileMismatch };

@@ -369,7 +369,7 @@ export function resolveSlicePRsBehindHead(
   // `date`/`report`/`partial` are irrelevant to matching (buildConformScope only echoes them
   // back in its own `lastConformance` field, which this function discards) — only `revision`
   // drives the implementedIn-to-changed-path match below.
-  const scope = buildConformScope(slices, { date: "", revision, report: "", partial: false }, changed.paths, false);
+  const scope = buildConformScope(slices, { date: "", revision, report: "", partial: false }, changed.paths, false, changed.boundPrefix);
   return { ok: true, count: scope.candidateSlices.length };
 }
 
