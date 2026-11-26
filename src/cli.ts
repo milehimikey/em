@@ -42,6 +42,9 @@ import { validateNoteBindings } from "./catalog/noteBindingValidate.js";
 import { validateDocModelConsistency } from "./catalog/docModelConsistencyValidate.js";
 import { validateOrphanedSliceDocs } from "./catalog/orphanedSliceDocValidate.js";
 import { validateCodeMap } from "./codemap/codeMapValidate.js";
+import { loadDeclaredRepos, loadReposOfManifest } from "./system/systemRepos.js";
+import { parseRepoArgs, resolveRepos } from "./system/repoResolver.js";
+import { buildReposCheckJson, renderReposCheckText, reposCheckOk, ReposCheckReport } from "./emit/reposCheckJson.js";
 import { validateModelVersionStale } from "./catalog/modelVersionValidate.js";
 import { validateInvariants } from "./catalog/invariantsValidate.js";
 import { computeSliceReadiness } from "./catalog/sliceReadyValidate.js";
@@ -2442,6 +2445,88 @@ conformBindings
     // process.exit() so a large --json document piped downstream isn't truncated, and so this
     // advisory check NEVER fails a run by default (GH #449 — opt-in CI gate only).
     if (opts.exitCode && !result.ok) process.exitCode = 1;
+  });
+
+const repos = program
+  .command("repos")
+  .description("the repositories a system's code lives in (system.yaml `repos:`), and where each is checked out on this machine (GH #528)");
+
+repos
+  .command("check")
+  .description(
+    "report every repo id as resolved, missing or not a git repo: `self` (the model's own " +
+      "repository) plus each id under `repos:` in the system.yaml governing [target]. A repo id " +
+      "resolves through, in order: `--repo <id>=<path>`; the uncommitted per-machine file " +
+      "`.em/repos.local.yaml` at the model repository's root (`repos: {<id>: <path>}`); a " +
+      "sibling directory named after the id, next to the model's repository. Also warns when a " +
+      "checkout's `origin` is not the remote the manifest records, and when the per-machine " +
+      "file is not gitignored. em never clones, pulls or pushes: a missing repo is reported, " +
+      "not fetched. Advisory — exit code stays 0 unless --exit-code is given and a repo did not " +
+      "resolve. Bad arguments exit 1.",
+  )
+  .argument("[target]", "a .em file, a directory, or a system.yaml (default: the working directory)")
+  .option(
+    "--repo <id=path>",
+    "map a repo id to a checkout for this run (repeatable); a bare <path> is accepted when the manifest declares exactly one repo",
+    (value: string, previous: string[]) => [...previous, value],
+    [] as string[],
+  )
+  .option("--json", "print a JSON document instead of the text report (reposCheckSchemaVersion 1.0; carries absolute paths — a local report, not one to commit)")
+  .option("--exit-code", "exit 1 if any repo did not resolve — the opt-in gate")
+  .action((target: string | undefined, opts: { repo: string[]; json?: boolean; exitCode?: boolean }) => {
+    const fail = (message: string): never => {
+      console.error(`em repos check: ${message}`);
+      process.exit(1);
+    };
+    const given = target ?? ".";
+    let isDir = false;
+    try {
+      isDir = statSync(given).isDirectory();
+    } catch {
+      fail(`cannot read ${given}`);
+    }
+    const startDir = isDir ? given : dirname(given);
+    // An explicit manifest path is used as given; anything else finds the manifest above it.
+    const explicitManifest = !isDir && /\.ya?ml$/i.test(given) ? given : null;
+    const declared = explicitManifest !== null ? loadReposOfManifest(explicitManifest) : loadDeclaredRepos(startDir);
+
+    const args = parseRepoArgs(opts.repo);
+    if (!args.ok) return fail(args.message);
+    const declaredRepos = declared.kind === "ok" ? declared.repos : [];
+    const flagPaths = new Map(args.byId);
+    for (const id of flagPaths.keys()) {
+      if (!declaredRepos.some((r) => r.id === id)) fail(`--repo ${id}=…: no repo "${id}" is declared under \`repos:\`${declared.kind === "none" ? " (no system.yaml governs this directory)" : ""}`);
+    }
+    if (args.bare !== null) {
+      if (declaredRepos.length !== 1) {
+        fail(
+          declaredRepos.length === 0
+            ? `--repo ${args.bare}: there is no declared repo to map a bare path to`
+            : `--repo ${args.bare}: ${declaredRepos.length} repos are declared, so a bare path is ambiguous — write --repo <id>=<path>`,
+        );
+      }
+      const only = declaredRepos[0].id;
+      if (flagPaths.has(only)) fail(`--repo: repo "${only}" is given twice`);
+      flagPaths.set(only, args.bare);
+    }
+
+    const resolved = resolveRepos({ startDir, repos: declaredRepos.map((r) => ({ id: r.id, remote: r.remote })), flagPaths });
+    let localFileIgnored: boolean | null = null;
+    if (resolved.localFile !== null && resolved.modelRepoRoot !== null) {
+      const ignored = realGit(["-C", resolved.modelRepoRoot, "check-ignore", "-q", resolved.localFile]);
+      localFileIgnored = ignored.status === 0 ? true : ignored.status === 1 ? false : null;
+    }
+    const report: ReposCheckReport = {
+      manifest: declared.kind === "none" ? null : resolve(declared.manifestPath),
+      manifestProblem: declared.kind === "invalid" ? declared.message : null,
+      modelRepoRoot: resolved.modelRepoRoot,
+      localFile: resolved.localFile,
+      localFileProblems: resolved.localFileProblems,
+      localFileIgnored,
+      repos: resolved.resolutions,
+    };
+    console.log(opts.json ? buildReposCheckJson(report) : renderReposCheckText(report));
+    if (opts.exitCode && !reposCheckOk(report)) process.exitCode = 1;
   });
 
 const discover = program.command("discover").description("checks for the discover skill's records (GH #295)");

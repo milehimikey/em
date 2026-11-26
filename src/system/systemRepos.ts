@@ -40,6 +40,11 @@ export type DeclaredRepos =
 export function loadDeclaredRepos(startDir: string): DeclaredRepos {
   const manifestPath = findSystemManifest(startDir);
   if (manifestPath === null) return { kind: "none" };
+  return loadReposOfManifest(manifestPath);
+}
+
+/** The repos one named manifest declares (GH #528: `em repos check <system.yaml>`). */
+export function loadReposOfManifest(manifestPath: string): Exclude<DeclaredRepos, { kind: "none" }> {
   let text: string;
   try {
     text = readFileSync(manifestPath, "utf8");
