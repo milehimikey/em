@@ -41,6 +41,7 @@ import { openNextDraft } from "./revise.js";
 import { clearQueue, readQueue } from "./defer.js";
 import { QueuedItem } from "../catalog/deferQueue.js";
 import { docAbsPath } from "../catalog/docLocate.js";
+import { isRepoId } from "../system/manifest.js";
 
 export type ApplyFrontmatterResult =
   | { ok: true; content: string; changed: boolean }
@@ -211,11 +212,103 @@ export function applyImplementedFrontmatter(raw: string, prUrl: string, shippedO
   return { ok: true, content, changed: true };
 }
 
+// ---- GH #539: one pull request per work unit -------------------------------------------------
+//
+// A slice whose code is in more than one repository ships as one pull request per work unit
+// (slice x repository). `implementedIn:` then holds one URL per unit, in the form the per-repo
+// conformance revision uses: `<repo>=<url>` pairs, comma-separated, no spaces, in repo-id order.
+// Each `mark-implemented --unit <repo>` call records one. Until every unit has its URL the doc
+// keeps `status: ready-to-implement` and carries the partial list; the call that completes it is
+// the one that flips the doc and writes the shipped record — so a slice is never recorded as
+// shipped on half its code.
+
+/** `<repo>=<url>,…` -> pairs, or `null` when the value is not that form (a plain URL: a slice
+ *  shipped as one pull request, or the previous version's link). A URL may contain `=`. */
+export function parseUnitLinks(value: string | null): { repo: string; url: string }[] | null {
+  if (value === null || !/^[A-Za-z0-9][A-Za-z0-9._-]*=/.test(value)) return null;
+  const out: { repo: string; url: string }[] = [];
+  for (const part of value.split(",")) {
+    const eq = part.indexOf("=");
+    const repo = eq > 0 ? part.slice(0, eq) : "";
+    const url = eq > 0 ? part.slice(eq + 1) : "";
+    if (!isRepoId(repo) || url === "" || out.some((x) => x.repo === repo)) return null;
+    out.push({ repo, url });
+  }
+  return out;
+}
+
+export function formatUnitLinks(links: readonly { repo: string; url: string }[]): string {
+  return [...links].sort((a, b) => (a.repo < b.repo ? -1 : a.repo > b.repo ? 1 : 0)).map((l) => `${l.repo}=${l.url}`).join(",");
+}
+
+export type ApplyUnitResult =
+  | { ok: true; content: string; changed: boolean; /** every unit of the slice now has its URL, and the doc is flipped */ complete: boolean; waiting: string[] }
+  | { ok: false; message: string };
+
+/**
+ * Pure: record `prUrl` for the work unit in `repo`, one of the slice's `allRepos`. Flips the doc
+ * (through `applyImplementedFrontmatter`, so every gate there still applies) only when that
+ * completes the set. Idempotent on the same URL; refuses a different URL for a unit already
+ * recorded, the same rule a one-unit slice holds for its single link.
+ */
+export function applyUnitImplemented(raw: string, repo: string, prUrl: string, allRepos: readonly string[], shippedOn: string | null = null): ApplyUnitResult {
+  const url = prUrl.trim();
+  if (!url) return { ok: false, message: "a PR URL is required" };
+  if (/[\x00-\x1f\x7f\x20,]/.test(url)) return { ok: false, message: "PR URL must not contain control characters, whitespace or a comma" };
+  const range = locateFrontmatterInner(raw);
+  if (!range) return { ok: false, message: "no frontmatter block found" };
+  const inner = raw.slice(range.innerStart, range.innerEnd);
+  const statusMatch = fieldLineRegex("status").exec(inner);
+  if (!statusMatch) return { ok: false, message: "no `status:` field found in frontmatter" };
+  const implMatch = fieldLineRegex("implementedIn").exec(inner);
+  const status = normalizeFieldValue(statusMatch[2])?.toLowerCase() ?? null;
+  const current = implMatch ? normalizeFieldValue(implMatch[2]) : null;
+  const recorded = parseUnitLinks(current) ?? [];
+  const mine = recorded.find((l) => l.repo === repo);
+  const waitingAfter = (links: readonly { repo: string }[]): string[] => allRepos.filter((r) => !links.some((l) => l.repo === r));
+
+  if (status !== RATIFIED_STATUS) {
+    // Already flipped (or never ratified): the same URL is the no-op re-run, anything else goes
+    // through the ordinary path so its refusals speak.
+    if (mine?.url === url) return { ok: true, content: raw, changed: false, complete: waitingAfter(recorded).length === 0, waiting: waitingAfter(recorded) };
+    const through = applyImplementedFrontmatter(raw, formatUnitLinks([...recorded.filter((l) => l.repo !== repo), { repo, url }]), shippedOn);
+    return through.ok ? { ...through, complete: true, waiting: [] } : through;
+  }
+  if (mine && mine.url !== url) {
+    return { ok: false, message: `unit "${repo}" is already recorded with a different URL (existing: ${mine.url}, requested: ${url}) — refusing to overwrite` };
+  }
+  // A list left over from the previous version's units is not this version's record.
+  const base = recorded.every((l) => allRepos.includes(l.repo)) ? recorded : [];
+  const next = [...base.filter((l) => l.repo !== repo), { repo, url }];
+  const value = formatUnitLinks(next);
+  const waiting = waitingAfter(next);
+  if (waiting.length === 0) {
+    const flipped = applyImplementedFrontmatter(raw, value, shippedOn);
+    return flipped.ok ? { ...flipped, complete: true, waiting: [] } : flipped;
+  }
+  if (current === value) return { ok: true, content: raw, changed: false, complete: false, waiting };
+  let updated: string;
+  if (implMatch) {
+    updated = inner.slice(0, implMatch.index) + `${implMatch[1]}${value}` + inner.slice(implMatch.index + implMatch[0].length);
+  } else {
+    const end = statusMatch.index + statusMatch[0].length;
+    const eol = inner.slice(end).startsWith("\r\n") ? "\r\n" : "\n";
+    updated = inner.slice(0, end) + `${eol}implementedIn: ${value}` + inner.slice(end);
+  }
+  return { ok: true, content: raw.slice(0, range.innerStart) + updated + raw.slice(range.innerEnd), changed: true, complete: false, waiting };
+}
+
 export type RunMarkImplementedResult =
   | {
       ok: true;
       path: string;
       changed: boolean;
+      /** GH #539, `--unit` only: whether every work unit of the slice now has its URL (the doc is
+       *  then flipped), and the repos still waiting when not. */
+      complete?: boolean;
+      waiting?: string[];
+      /** The value now in `implementedIn:`. */
+      implementedIn?: string;
       /** MIL-283: set when the merge opened the next version as a `draft` because at least one
        *  Open Question was deferred to it — `version` is the new draft's, `reopened` the count. */
       openedDraft: OpenedDraft | null;
@@ -236,6 +329,9 @@ export function runMarkImplemented(
   sliceKey: string,
   prUrl: string,
   shippedOn: string | null = null,
+  /** GH #539: record this URL for one work unit — the unit's repo, and every repo the slice has
+   *  a work unit in. Absent: the slice is one pull request, as always. */
+  unit?: { repo: string; all: readonly string[] },
 ): RunMarkImplementedResult {
   const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
   if (sliceIndex === -1) {
@@ -281,6 +377,20 @@ export function runMarkImplemented(
 
   const absPath = docAbsPath(baseDir, doc.path); // GH #421: the doc may sit in a storyline folder
   const raw = readFileSync(absPath, "utf8");
+  if (unit !== undefined) {
+    const u = applyUnitImplemented(raw, unit.repo, prUrl, unit.all, shippedOn);
+    if (!u.ok) return { ok: false, message: `${doc.path}: ${u.message}` };
+    const implementedIn = normalizeFieldValue(fieldLineRegex("implementedIn").exec(u.content)?.[2] ?? "") ?? "";
+    if (!u.changed) return { ok: true, path: doc.path, changed: false, openedDraft: null, complete: u.complete, waiting: u.waiting, implementedIn };
+    if (!u.complete) {
+      writeFileSync(absPath, u.content, "utf8");
+      return { ok: true, path: doc.path, changed: true, openedDraft: null, complete: false, waiting: u.waiting, implementedIn };
+    }
+    const flipped = nextDraftIfDeferred(u.content, (v) => readQueue(baseDir, sliceKey, v).items);
+    writeFileSync(absPath, flipped.content, "utf8");
+    if (flipped.openedDraft && flipped.openedDraft.injected > 0) clearQueue(baseDir, sliceKey, flipped.openedDraft.version);
+    return { ok: true, path: doc.path, changed: true, openedDraft: flipped.openedDraft, complete: true, waiting: [], implementedIn };
+  }
   const result = applyImplementedFrontmatter(raw, prUrl, shippedOn);
   if (!result.ok) {
     return { ok: false, message: `${doc.path}: ${result.message}` };

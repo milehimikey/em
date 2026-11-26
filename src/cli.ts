@@ -69,6 +69,7 @@ import {
   engagementStatusFor,
   formatEngagementPlanText,
   formatEngagementStatusText,
+  workUnitReposOf,
 } from "./cli/engagement.js";
 import { LEDGER_STATES, engagementPath, loadEngagement, openEngagementSlices, readOpenEngagements } from "./cli/engagementFile.js";
 import { buildEngagementBriefJson, buildEngagementFoundationJson, buildEngagementPlanJson, buildEngagementStatusJson } from "./emit/engagementJson.js";
@@ -1120,8 +1121,12 @@ slice
   .argument("<slice-key>", "slice export key (kebab-case)")
   .argument("<pr-url>", "merged PR (or commit) URL")
   .option("--on <date>", "merge date recorded as `shippedOn:`, YYYY-MM-DD (default: today, local date; MIL-284)")
-  .option("--json", "print a JSON document instead of text: { path, changed, implementedIn, nextDraft: { version, reopened[] } | null } (GH #285)")
-  .action((file: string, sliceKey: string, prUrl: string, opts: { on?: string; json?: boolean }) => {
+  .option(
+    "--unit <repo>",
+    "record this URL for one work unit of the slice — the unit's repo id (GH #539). Required for a slice whose code is in more than one repository: each unit's pull request is recorded on its own, and the doc flips when every unit has one",
+  )
+  .option("--json", "print a JSON document instead of text: { path, changed, implementedIn, nextDraft: { version, reopened[] } | null } (GH #285); with --unit also { unit, complete, waiting }")
+  .action((file: string, sliceKey: string, prUrl: string, opts: { on?: string; unit?: string; json?: boolean }) => {
     if (opts.on !== undefined && !isValidDateString(opts.on)) {
       console.error(`em slice mark-implemented: invalid --on date "${opts.on}" — expected YYYY-MM-DD`);
       process.exit(1);
@@ -1142,7 +1147,21 @@ slice
       process.exit(1);
     }
 
-    const result = runMarkImplemented(model, refs, dirname(file), sliceKey, prUrl, opts.on ?? localIsoDate());
+    // GH #539: a slice whose code is in more than one repository is recorded unit by unit.
+    const unitRepos = workUnitReposOf({ file, model, refs }, buildUnitIndex(model, refs, dirname(file)), sliceKey);
+    const failUnit = (m: string): never => {
+      console.error(`em slice mark-implemented: ${m}`);
+      process.exit(1);
+    };
+    if (opts.unit !== undefined) {
+      if (unitRepos === null) failUnit(`--unit ${opts.unit}: the model has no code-map.yaml, so slice "${sliceKey}" ships as one pull request — drop --unit`);
+      else if (!unitRepos.includes(opts.unit)) failUnit(`--unit ${opts.unit}: slice "${sliceKey}" has no work unit in repo "${opts.unit}" — its units are in: ${unitRepos.join(", ") || "(none)"}`);
+    } else if (unitRepos !== null && unitRepos.length > 1) {
+      failUnit(`slice "${sliceKey}" has ${unitRepos.length} work units (${unitRepos.join(", ")}) — record each pull request with --unit <repo>; the doc flips when every unit has one`);
+    }
+    const perUnit = opts.unit !== undefined && unitRepos !== null && unitRepos.length > 1 ? { repo: opts.unit, all: unitRepos } : undefined;
+
+    const result = runMarkImplemented(model, refs, dirname(file), sliceKey, prUrl, opts.on ?? localIsoDate(), perUnit);
     if (!result.ok) {
       console.error(`em slice mark-implemented: ${result.message}`);
       process.exit(1);
@@ -1153,12 +1172,21 @@ slice
           {
             path: result.path,
             changed: result.changed,
-            implementedIn: prUrl,
+            implementedIn: result.implementedIn ?? prUrl,
             nextDraft: result.openedDraft ? { version: result.openedDraft.version, reopened: result.openedDraft.titles } : null,
+            ...(perUnit ? { unit: `${sliceKey}@${perUnit.repo}`, complete: result.complete === true, waiting: result.waiting ?? [] } : {}),
           },
           null,
           2,
         ),
+      );
+      return;
+    }
+    if (perUnit && result.complete !== true) {
+      const waiting = result.waiting ?? [];
+      console.log(
+        `${result.changed ? "recorded" : "already recorded (no-op)"}: ${sliceKey}@${perUnit.repo} (${prUrl}) — ${perUnit.all.length - waiting.length} of ${perUnit.all.length} units; ` +
+          `${result.path} stays ready-to-implement until ${waiting.join(", ")} ${waiting.length === 1 ? "is" : "are"} recorded`,
       );
       return;
     }
