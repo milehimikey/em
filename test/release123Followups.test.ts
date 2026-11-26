@@ -233,12 +233,12 @@ describe("ratified-hash-baseline upgrade step (opt-in)", () => {
 
 describe("model export carries the amendment record and the sections", () => {
   it("schema 1.22: slice.doc.amendedBy / amendedOn / sections", () => {
-    expect(SCHEMA_VERSION).toBe("1.22");
+    expect(SCHEMA_VERSION).toBe("1.23"); // GH #529: the fields below are 1.22's; 1.23 added places
     const dir = repo(doc(["status: draft", "version: 1", "amendedBy: Sam", "amendedOn: 2026-02-01"]));
     const res = em(["export", "model.em"], dir);
     expect(res.status).toBe(0);
     const out = JSON.parse(res.stdout);
-    expect(out.schemaVersion).toBe("1.22");
+    expect(out.schemaVersion).toBe("1.23");
     const ship = out.model.slices.find((s: { key: string }) => s.key === "ship").doc;
     expect(ship.amendedBy).toBe("Sam");
     expect(ship.amendedOn).toBe("2026-02-01");

@@ -1073,6 +1073,7 @@ export function createServer(): McpServer {
         persona: z.string().optional().describe("slices: match a slice with a ui in this @Persona"),
         tag: z.string().optional().describe("slices: match a slice with an event carrying this tag key"),
         storyline: z.string().optional().describe("slices: match a slice declared in this `storyline` block"),
+        repo: z.string().optional().describe("slices: match a slice with an element placed in this repo id by the model's code-map.yaml"),
         id: z.string().optional().describe("invariant: the INV-* id to look up"),
         testsDir: z.string().optional().describe("invariant: directory to scan for test files citing this id"),
         name: z.string().optional().describe("field: the field's name"),
@@ -1080,7 +1081,7 @@ export function createServer(): McpServer {
         to: z.string().optional().describe("path: the ending element's export ref or display name"),
       },
     },
-    async ({ files, verb, event, of, depth, pattern, status, context, persona, tag, storyline, id, testsDir, name, from, to }) => {
+    async ({ files, verb, event, of, depth, pattern, status, context, persona, tag, storyline, repo, id, testsDir, name, from, to }) => {
       if (testsDir !== undefined) {
         if (!existsSync(testsDir)) return errorResult(`testsDir not found: ${testsDir}`);
         if (!statSync(testsDir).isDirectory()) return errorResult(`testsDir is not a directory: ${testsDir}`);
@@ -1115,7 +1116,8 @@ export function createServer(): McpServer {
           return textResult(buildQueryJson(verb, files, { of, depth: depth ?? null }, result.results));
         }
         case "slices": {
-          const filters = { pattern, status, context, persona, tag, storyline };
+          // `repo` is echoed in `args` only when given, so a query without it is byte-identical to 1.3's.
+          const filters = { pattern, status, context, persona, tag, storyline, ...(repo === undefined ? {} : { repo }) };
           const result = querySlices(system, filters);
           if (!result.ok) return errorResult(result.error);
           return textResult(buildQueryJson(verb, files, filters, result.results));

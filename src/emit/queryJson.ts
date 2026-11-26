@@ -22,7 +22,11 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // Additive-only.
 // 1.3 (GH #277): `slices` results gain `storyline` (the `storyline` block the slice is declared
 // in, null when none) and `slices` accepts a `storyline` filter. Additive-only.
-export const QUERY_SCHEMA_VERSION = "1.3";
+// 1.4 (GH #529, em 1.24.0): `slices` results gain `places` (`{ repo, root }[]`, the places the
+// slice's elements live in) — present only when the slice's model has a `code-map.yaml`, absent
+// otherwise, so a model with no code map answers byte-identically apart from this version. And
+// `slices` accepts a `repo` filter, echoed in `args` only when given. Additive-only.
+export const QUERY_SCHEMA_VERSION = "1.4";
 
 /** Build the `em query <verb> ... --json` document. Pretty-printed (2-space), no trailing
  *  newline — the caller adds it, same convention as every other `em` JSON surface. No

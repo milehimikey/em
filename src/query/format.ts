@@ -4,6 +4,7 @@
 // always prints a bare `(none)` line and still exits 0 — a query with a legitimately empty
 // answer (an event nobody consumes, two elements with no path between them) is not an error.
 
+import { formatPlace } from "../codemap/codeMap.js";
 import {
   ConsumerEntry,
   ProducerEntry,
@@ -47,7 +48,8 @@ export function formatSlices(results: SliceQueryEntry[]): string {
         (r.storyline === null ? "" : ` storyline="${r.storyline}"`) +
         tagList("personas", r.personas) +
         tagList("contexts", r.contexts) +
-        tagList("tags", r.tags),
+        tagList("tags", r.tags) +
+        (r.places === undefined ? "" : tagList("places", r.places.map(formatPlace))),
     )
     .join("\n");
 }

@@ -110,6 +110,13 @@ from the nearest `system.yaml` at or above the model's directory, looking no hig
 of the git repository the model is in. A `system.yaml` outside that repository does not govern
 the model.
 
+## Reading the result
+
+`em export` publishes each element's place, each slice's places and the model's places
+(export schema 1.23, [cli.md](cli.md#em-export-file)); `em query slices` carries each slice's
+places and filters by `--repo <id>` (query schema 1.4). A model with no code map publishes none
+of it.
+
 `em repos check` ([cli.md](cli.md#em-repos-check-target)) reports each declared repo id as
 resolved, missing or not a git repo on this machine.
 

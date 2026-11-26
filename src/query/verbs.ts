@@ -17,6 +17,8 @@
 // reaches everything that reads ANY instance of it. Instances are never edges (edges.ts's own
 // note); this is the query-engine rule MIL-191's design note assigns to MIL-168.
 
+import { loadModelPlaces } from "../codemap/modelPlaces.js";
+import { Place } from "../codemap/codeMap.js";
 import { Element } from "../model/model.js";
 import { IndexEdge, InvariantIndexEntry } from "../model/queryIndex.js";
 import { QuerySystem, QueryModelEntry, resolveElement, qualifyRef } from "./system.js";
@@ -189,6 +191,9 @@ export interface SliceQueryEntry {
   personas: string[];
   contexts: string[];
   tags: string[];
+  /** GH #529 (query schema 1.4): the places this slice's elements live in. Present only when
+   *  the slice's model has a code map. */
+  places?: Place[];
 }
 
 export interface SliceFilters {
@@ -199,6 +204,9 @@ export interface SliceFilters {
   tag?: string;
   /** GH #277: match a slice declared in this `storyline` block (case-insensitive). */
   storyline?: string;
+  /** GH #529: match a slice with an element placed in this repo id (exact; `self` is the
+   *  model's own repository). A model with no code map has no places, so none of its slices match. */
+  repo?: string;
 }
 
 /** The filtered slice list — every filter AND-combines. `pattern`/`status` match the slice's
@@ -218,6 +226,7 @@ export function querySlices(system: QuerySystem, filters: SliceFilters): VerbRes
   }
   const results: SliceQueryEntry[] = [];
   for (const entry of system.entries) {
+    const modelPlaces = loadModelPlaces(entry.file, entry.model, entry.refs);
     entry.model.slices.forEach((slice, i) => {
       const key = entry.refs.sliceKeys[i];
       const pattern = classifySlicePattern(slice);
@@ -232,8 +241,21 @@ export function querySlices(system: QuerySystem, filters: SliceFilters): VerbRes
       if (filters.persona && !personas.some((p) => p.toLowerCase() === filters.persona!.toLowerCase())) return;
       if (filters.storyline && normalizeName(slice.storyline ?? "") !== normalizeName(filters.storyline)) return;
       if (filters.tag && !tags.some((t) => t.toLowerCase() === filters.tag!.toLowerCase())) return;
+      const places = modelPlaces.kind === "ok" ? modelPlaces.bySlice[i] : null;
+      if (filters.repo !== undefined && !(places ?? []).some((p) => p.repo === filters.repo)) return;
 
-      results.push({ ref: qualifyRef(system, entry.modelKey, key), name: slice.name, index: i, pattern, status, storyline: slice.storyline ?? null, personas, contexts, tags });
+      results.push({
+        ref: qualifyRef(system, entry.modelKey, key),
+        name: slice.name,
+        index: i,
+        pattern,
+        status,
+        storyline: slice.storyline ?? null,
+        personas,
+        contexts,
+        tags,
+        ...(places === null ? {} : { places: places.map((p) => ({ repo: p.repo, root: p.root })) }),
+      });
     });
   }
   return { ok: true, results };

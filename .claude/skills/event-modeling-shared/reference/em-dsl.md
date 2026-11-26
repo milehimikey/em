@@ -242,6 +242,7 @@ em query slices <files> --context <c>                               # match a sl
 em query slices <files> --persona <p>                               # match a slice with a ui in this @Persona
 em query slices <files> --tag <t>                                   # match a slice with an event carrying this tag key
 em query slices <files> --storyline <name>                          # match a slice declared in this `storyline` block
+em query slices <files> --repo <id>                                 # match a slice with an element placed in this repo id by the model's code-map.yaml (`self` = the model's own repository)
 em query slices <files> --json                                      # print a JSON document instead of the text report
 em query invariant <files>                                          # declaring slice + doc facts for one INV-* id, and (with --tests) its test citations
 em query invariant <files> --id <inv-id>                            # the INV-* id to look up
