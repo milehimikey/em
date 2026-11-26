@@ -711,6 +711,53 @@ schema version strings.
 | **`.em-version`: a per-project pin em reads itself** (GH #223, [ai-workflow.md](ai-workflow.md#pinning-the-cli-to-the-same-version)): a one-line `.em-version` file next to the model, or anywhere above the directory `em` is run from, pins the CLI. An `em` of another version re-runs the command as `npx -y @milehimikey/em@<pinned>` with the same arguments and exit code, so it holds on any machine with `em` and `npx`, with or without mise. `em upgrade` is never re-run that way. `EM_SKIP_VERSION_PIN=1` turns it off. A repo without the file is unchanged. Adopting it is optional, and a repo may carry it beside a mise pin | `em-version-pin` (since 1.24.0) rewrites the version in an existing `.em-version` inside the repo, in its own commit, right after `mise-pin`. It never creates the file |
 | **`em skill check` reads the `.em-version` pin** ([cli.md](cli.md#em-skill-check-path)): new finding `em-version-pin-mismatch` when the file disagrees with the plugin pin (or, with no plugin, the installed em), exit 1. The mise pin is held to the same version, so two pin files that disagree cannot both pass. `skillCheckSchemaVersion` 1.2 → **1.3** (additive: `emVersionPin`, `emVersionFile` on every finding, `null` unless that code) | no action needed. Fix a reported mismatch by running `em upgrade <model>.em --apply` |
 
+### Upgrading to 1.24.0
+
+Update the `@milehimikey/em` dependency (and the plugin pin to `em-1-24-0` / `v1.24.0` on plugin
+repos, the mise pin and any `.em-version`), all together, then `em upgrade <model>.em` and
+`em upgrade <model>.em --apply`. The 1.24.0 steps are `plugin-pin`, `mise-pin`, `em-version-pin`,
+`skill-bundle` (the conform, engagement and implement skills and the four agents changed) and
+`ci-block` (the paths filter gains `**/code-map.yaml`).
+
+**A project whose model and code share one repository is done at that point.** Everything else
+in this release is reached by adding a `repos:` list to `system.yaml` and a `code-map.yaml`
+beside a model, which nothing does for you: see [multi-repo.md](multi-repo.md).
+
+**Before the first file that uses a new schema is committed, move every `em` that reads it.** An
+`em` older than 1.24.0 refuses `systemSchemaVersion: "2.1"`, `bindingsSchemaVersion: "1.1"` and
+`engagementSchemaVersion: "1.4"` as unsupported versions.
+
+Every schema change is additive. Versions that moved, and the two that are new:
+
+| Schema | Was | Is | What was added |
+|---|---|---|---|
+| System manifest (`systemSchemaVersion`) | 2.0 | **2.1** | `repos:`. `em` still writes 2.0; declare 2.1 to add `repos:` |
+| Code map (`codeMapSchemaVersion`) | — | **1.0** | New file, `code-map.yaml` |
+| Bindings manifest (`bindingsSchemaVersion`) | 1.0 | **1.1** | `repo:` on each binding. Declare 1.1 to use it |
+| Engagement file (`engagementSchemaVersion`) | 1.3 | **1.4** | `units:` on a slice entry. Written only once a unit is recorded |
+| Export (`schemaVersion`) | 1.22 | **1.23** | `places`, `placedBy` (only for a model with a code map) |
+| Query (`querySchemaVersion`) | 1.3 | **1.4** | `places` on `slices` results; `--repo` |
+| Engagement plan (`engagementPlanSchemaVersion`) | 1.6 | **1.7** | `units[]` (only for a model with a code map) |
+| Engagement status (`engagementStatusSchemaVersion`) | 1.1 | **1.2** | `slices[].units` |
+| Engagement brief (`engagementBriefSchemaVersion`) | 1.0 | **1.1** | `slices[].unit`; one brief per work unit |
+| Bindings check (`bindingsCheckSchemaVersion`) | 1.0 | **1.1** | `repo`, `repoResolved` (only across repositories) |
+| Status (`statusSchemaVersion`) | 1.13 | **1.14** | `conformance[].repos` |
+| Freshness (`freshnessSchemaVersion`) | 1.2 | **1.3** | `repos` |
+| Skill check (`skillCheckSchemaVersion`) | 1.2 | **1.3** | `emVersionPin`, `emVersionFile` |
+| Repos check (`reposCheckSchemaVersion`) | — | **1.0** | New command, `em repos check` |
+
+Three values are written in a new form when code is in several repositories, in a slot that
+already existed, so no field was added: a conformance revision (`<repo>=<rev>,…` in
+`Last conformance:`, `Certified:`, `conformedAt:`), and `implementedIn:` (`<repo>=<url>,…`).
+`em conform-scope`'s JSON, which has no version field, gains `matchedBy: "bindings"`, writes
+paths as `<repo>:<path>` across repositories, and adds `repos`.
+
+Three behaviour changes reach a single-repository project, and none needs action:
+`em conform-scope` and the slice-PR count now place changed files through the bindings manifest
+(GH #523), so a project with bindings manifests sees candidates and counts where it saw none;
+`--repo` became optional on `em conform bindings check` and `em conform-scope`; and with two
+`.em-version` files in one tree, a command naming a model follows the one nearest the model.
+
 ## 1.23.1
 
 | What changed for a model repo | Handled by `em upgrade`? |
