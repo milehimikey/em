@@ -322,6 +322,33 @@ export function listBindingsSliceKeys(modelDir: string): string[] {
     .sort();
 }
 
+/** GH #523: every file one slice's bindings manifest names (elements, then each invariant's
+ *  `enforcedIn`/`testedIn`), de-duplicated in first-seen order, with a leading `./` dropped so
+ *  each compares equal to a `git diff --name-only` path. `[]` when the slice has no manifest or
+ *  the manifest is malformed: `em conform bindings check` is what reports a bad file, and a
+ *  reader that only wants paths treats it as "no path record". */
+export function boundFilesForSlice(modelDir: string, sliceKey: string): string[] {
+  let text: string;
+  try {
+    text = readFileSync(join(modelDir, bindingsFilePath(sliceKey)), "utf8");
+  } catch {
+    return [];
+  }
+  const parsed = parseBindingsFile(text, sliceKey);
+  if (!parsed.ok) return [];
+  const files = new Set<string>();
+  const add = (f: string): void => {
+    const clean = f.trim().replace(/^\.\//, "");
+    if (clean) files.add(clean);
+  };
+  for (const el of parsed.doc.elements) add(el.file);
+  for (const inv of parsed.doc.invariants) {
+    add(inv.enforcedIn.file);
+    add(inv.testedIn.file);
+  }
+  return [...files];
+}
+
 /** The bare `<kind>.<slug>` refs (no `<sliceKey>/` prefix) the compiled model actually declares
  *  for `sliceKey` — what a bindings file's `elements[].ref` is checked against. */
 function elementRefsForSlice(refs: RefsResult, sliceKey: string): Set<string> {
