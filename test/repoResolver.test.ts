@@ -179,7 +179,7 @@ describe("resolveRepos and em repos check (real git repos)", () => {
     expect(doc.reposCheckSchemaVersion).toBe("1.0");
     expect(doc.ok).toBe(true);
     expect(doc.localFileIgnored).toBe(true);
-    expect(doc.summary).toEqual({ total: 5, resolved: 5, missing: 0, notAGitRepo: 0 });
+    expect(doc.summary).toEqual({ total: 5, resolved: 5, missing: 0, notAGitRepo: 0, ownEmPins: 0 });
     expect(doc.repos.map((x: { id: string; source: string }) => `${x.id}:${x.source}`)).toEqual(["self:self", "web:sibling", "co:local-file", "pay:flag", "plain:flag"]);
     expect(doc.repos[3]).toMatchObject({ path: join(base, "web"), remoteMatches: false });
   });

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, renameSync, rmSync } from "node:fs";
 import { cp, mkdir, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { CompileOptions, CompileResult, compileModelFile, compileModelText } from "./pipeline.js";
@@ -115,7 +115,8 @@ import { buildSkillCheckJson } from "./emit/skillCheckJson.js";
 import { checkMisePin } from "./cli/misePin.js";
 import { checkPlugin, claudePluginsDir, detectPlugin, pluginInstallCommands } from "./cli/pluginPin.js";
 import { readContract } from "./cli/contract.js";
-import { resolveDispatch, dispatchToPinnedVersion, checkVersionPin } from "./cli/versionPin.js";
+import { resolveDispatch, dispatchToPinnedVersion, checkVersionPin, findOwnEmPins, findVersionPin, VERSION_PIN_FILENAME } from "./cli/versionPin.js";
+import { SELF_REPO_ID } from "./system/manifest.js";
 import { EM_SKILL_DIR_NAMES, EM_SHARED_DIR_NAMES, EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR, EM_AGENT_FILES, resolveVendoredDirs, VendoredDirs } from "./cli/skillDirs.js";
 import { createServer as createMcpServer } from "./mcp/server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -2592,6 +2593,15 @@ repos
       localFileProblems: resolved.localFileProblems,
       localFileIgnored,
       repos: resolved.resolutions,
+      // GH #546: the model repository's pin, and any code repository that fixes its own.
+      emPin: (() => {
+        const anchor = resolved.modelRepoRoot ?? startDir;
+        const pin = findVersionPin(startDir, anchor);
+        return pin ? { version: pin.version, file: relative(anchor, pin.source).split(sep).join("/") || VERSION_PIN_FILENAME } : null;
+      })(),
+      ownEmPins: resolved.resolutions
+        .filter((r) => r.id !== SELF_REPO_ID && r.status === "resolved" && r.path !== null)
+        .flatMap((r) => findOwnEmPins(r.path!).map((p) => ({ repo: r.id, file: p.file, version: p.version }))),
     };
     console.log(opts.json ? buildReposCheckJson(report) : renderReposCheckText(report));
     if (opts.exitCode && !reposCheckOk(report)) process.exitCode = 1;

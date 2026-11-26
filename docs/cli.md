@@ -5392,12 +5392,36 @@ things are on this machine is its whole subject. It is a local report, not a doc
 
 | Field | Meaning |
 |---|---|
-| `ok` | Every repo resolved, and the manifest and per-machine file were usable. A differing remote or an un-ignored per-machine file does not make it `false` |
+| `ok` | Every repo resolved, the manifest and per-machine file were usable, and no code repository fixes an em version of its own. A differing remote or an un-ignored per-machine file does not make it `false` |
+| `emPin` / `ownEmPins` | The model repository's `.em-version` (`null` when it has none), and each place a resolved code repository fixes its own em version. See **The em pin** |
 | `manifest` / `manifestProblem` | The governing manifest (`null` when none), and why its `repos:` could not be read when it could not |
 | `localFile` / `localFileProblems` / `localFileIgnored` | The per-machine file when it exists; why it was not used; whether git ignores it (`null` when there is no file or git could not say) |
 | `repos[].status` | `"resolved"`, `"missing"` or `"not-a-git-repo"` |
 | `repos[].source` | `"self"`, `"flag"`, `"local-file"` or `"sibling"`: which source named `path`. `null` with a `null` path when the model is not in a git repository, so there is nowhere to look |
 | `repos[].remoteMatches` / `actualRemote` | See above; `actualRemote` is set only when they differ |
+
+### The em pin
+
+Since 1.24.0 (GH #546). A system has one em pin: the `.em-version` of the model's repository.
+When the manifest declares repos, the report names it, and lists every resolved code repository
+that fixes an em version of its own:
+
+```
+em pin: 1.24.0 (.em-version, in the model's repository) — every repository runs em at this version
+  checkout-svc: .github/workflows/ci.yml fixes em 1.22.0 itself — remove it; a code repository runs em at the version the model's repository pins
+```
+
+Three places are looked in, at the root of each resolved repository other than `self`: a
+`.em-version` file, an `@milehimikey/em` entry in `package.json` (`dependencies`,
+`devDependencies`, `optionalDependencies`), and `@milehimikey/em@<x.y.z>` in a file under
+`.github/workflows/`. `--json` carries `emPin: { version, file } | null` and
+`ownEmPins: [{ repo, file, version }]`, and `summary.ownEmPins` counts them. Any own pin makes
+`ok` false, so `--exit-code` fails on one.
+
+This works because a command that names a model file runs at the version the **model's**
+repository pins, from any directory, in preference to a `.em-version` above the working
+directory ([ai-workflow.md](ai-workflow.md#pinning-the-cli-to-the-same-version)). With no model
+named, the pin above the working directory applies, as before.
 
 There is no MCP tool for this command: it reports one machine's checkout paths.
 

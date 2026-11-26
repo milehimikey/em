@@ -23,7 +23,7 @@
 // (dispatchToPinnedVersion) is a thin wrapper around `npx`, exercised by an opt-in integration test
 // since it needs real process spawning and (on a cache miss) network access.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve as resolvePath } from "node:path";
 import { spawn } from "node:child_process";
 import { pluginPinVersion } from "./misePin.js";
@@ -65,6 +65,42 @@ export function findVersionPin(startDir: string, stopAt?: string): VersionPin | 
     if (parent === dir || (stop !== null && resolvePath(dir) === stop)) return null; // filesystem root, or `stopAt`
     dir = parent;
   }
+}
+
+/** The root of the git work tree `dir` is in (the nearest ancestor holding a `.git` entry), or
+ *  `null` outside git. A pin never governs across a repository boundary. */
+function repoRootOf(dir: string): string | null {
+  let d = resolvePath(dir);
+  for (;;) {
+    if (existsSync(join(d, ".git"))) return d;
+    const parent = dirname(d);
+    if (parent === d) return null;
+    d = parent;
+  }
+}
+
+/**
+ * GH #546: the pin of the MODEL's repository, for a command that names a model. There is one em
+ * pin for a system, and it lives with the model; a command run from a code repository against a
+ * model elsewhere (`em conform bindings check ../model/checkout/checkout.em`, in a code repo's
+ * CI) must run at that version, not at whatever its own directory tree happens to say.
+ *
+ * The model is the first argument that names an existing `.em` file or `system.yaml`. Its pin is
+ * the nearest `.em-version` at or above it, inside its own git repository. `null` when no
+ * argument names one, or that repository carries no pin — the caller then falls back to the pin
+ * above the working directory, as before.
+ */
+export function findModelRepoPin(args: readonly string[], cwd: string): VersionPin | null {
+  for (const arg of args) {
+    if (arg.startsWith("-")) continue;
+    const base = arg.replace(/\\/g, "/").split("/").pop() ?? "";
+    if (!base.endsWith(".em") && base !== "system.yaml") continue;
+    const path = resolvePath(cwd, arg);
+    if (!existsSync(path)) continue;
+    const dir = dirname(path);
+    return findVersionPin(dir, repoRootOf(dir) ?? undefined);
+  }
+  return null;
 }
 
 /** Commands that always run as the installed em, whatever `.em-version` says. `upgrade` is the
@@ -119,7 +155,8 @@ export function checkVersionPin(repoRoot: string, installedVersion: string, plug
 
 /**
  * Decide whether a `.em-version` pin requires dispatching away from the currently-running
- * `installedVersion`. `null` means no dispatch: either no pin exists anywhere up the tree, the pin
+ * `installedVersion`. The pin is the model repository's when `args` name a model (GH #546, see
+ * `findModelRepoPin`), else the nearest one above `startDir`. `null` means no dispatch: either no pin exists anywhere up the tree, the pin
  * matches what's already running (this is what guarantees the dispatched child doesn't recurse into
  * dispatching itself again), `SKIP_ENV_VAR` is set, or `args` name a command that never dispatches
  * (`em upgrade`, see `dispatchExempt`).
@@ -132,7 +169,9 @@ export function resolveDispatch(
 ): VersionPin | null {
   if (env[SKIP_ENV_VAR]) return null;
   if (dispatchExempt(args)) return null;
-  const pin = findVersionPin(startDir);
+  // GH #546: the model's repository holds the pin. It wins over a pin above the working
+  // directory, which may be a code repository's own.
+  const pin = findModelRepoPin(args, startDir) ?? findVersionPin(startDir);
   if (!pin || pin.version === installedVersion) return null;
   return pin;
 }
@@ -161,4 +200,64 @@ export function dispatchToPinnedVersion(version: string, args: string[], env: No
       resolve(code ?? 1);
     });
   });
+}
+
+// ---- GH #546: a code repository that hardcodes an em version of its own ----------------------
+
+/** One place a repository fixes an em version itself. */
+export interface OwnEmPin {
+  /** Path relative to the repository root, posix. */
+  file: string;
+  version: string;
+}
+
+const EM_AT_VERSION = /@milehimikey\/em@(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)/g;
+
+/**
+ * Every place the repository at `repoRoot` fixes an em version of its own: a root `.em-version`,
+ * an `@milehimikey/em` dependency in the root `package.json` (as written, range included), and
+ * each `@milehimikey/em@<x.y.z>` in a workflow under `.github/workflows/`. A code repository
+ * should have none: it runs em at the version the model's repository pins. Read-only, and only
+ * these three places — the same three a person would look in.
+ */
+export function findOwnEmPins(repoRoot: string): OwnEmPin[] {
+  const out: OwnEmPin[] = [];
+  const read = (rel: string): string | null => {
+    try {
+      return readFileSync(join(repoRoot, rel), "utf8");
+    } catch {
+      return null;
+    }
+  };
+  const pinFile = read(VERSION_PIN_FILENAME);
+  if (pinFile !== null && pinFile.trim() !== "") out.push({ file: VERSION_PIN_FILENAME, version: pinFile.trim() });
+  const pkg = read("package.json");
+  if (pkg !== null) {
+    try {
+      const json = JSON.parse(pkg) as Record<string, Record<string, unknown> | undefined>;
+      for (const section of ["dependencies", "devDependencies", "optionalDependencies"]) {
+        const v = json[section]?.[PACKAGE_NAME];
+        if (typeof v === "string") out.push({ file: "package.json", version: v });
+      }
+    } catch {
+      // not JSON: nothing to report from it
+    }
+  }
+  let workflows: string[] = [];
+  try {
+    workflows = readdirSync(join(repoRoot, ".github", "workflows")).filter((n) => /\.ya?ml$/.test(n)).sort();
+  } catch {
+    workflows = [];
+  }
+  for (const name of workflows) {
+    const text = read(`.github/workflows/${name}`);
+    if (text === null) continue;
+    const seen = new Set<string>();
+    for (const m of text.matchAll(EM_AT_VERSION)) {
+      if (seen.has(m[1])) continue;
+      seen.add(m[1]);
+      out.push({ file: `.github/workflows/${name}`, version: m[1] });
+    }
+  }
+  return out;
 }

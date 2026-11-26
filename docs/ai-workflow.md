@@ -96,6 +96,14 @@ mise is active (`jdx/mise-action`, or `mise install && mise exec`, in CI):
 mise only holds where mise runs. A repo whose agents or pipelines may run without it should carry
 `.em-version` as well, or instead.
 
+**One pin for a system, in the model's repository** (since 1.24.0, GH #546). When a model's code
+is in other repositories, those repositories do not get pins of their own. A command that names
+a model file (`em validate ../storefront-model/checkout/checkout.em`) runs at the version the
+model's repository pins, from whatever directory it is started, and that pin wins over a
+`.em-version` above the working directory. `em repos check` names the pin in force and reports
+any code repository that fixes a version itself, in a `.em-version`, its `package.json` or a
+workflow ([ci.md](ci.md#a-code-repository-run-em-at-the-models-pin)).
+
 **Keep every pin on one version**: `.em-version`, the mise line, and the plugin's
 `extraKnownMarketplaces` key. Then the CLI, the skills and the MCP server cannot skew from each
 other. Commit them all.

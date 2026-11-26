@@ -21,12 +21,24 @@ export interface ReposCheckReport {
   /** `true`/`false` when the per-machine file exists and git could say whether it is ignored. */
   localFileIgnored: boolean | null;
   repos: RepoResolution[];
+  /** GH #546: the one em pin of the system — the model repository's `.em-version` — or `null`
+   *  when it carries none. */
+  emPin: { version: string; file: string } | null;
+  /** GH #546: per resolved repo other than `self`, every place it fixes an em version of its
+   *  own (`.em-version`, `package.json`, a workflow). A code repository should have none. */
+  ownEmPins: { repo: string; file: string; version: string }[];
 }
 
-/** Every repo resolved, with a usable manifest and per-machine file. A remote that differs, or
- *  a per-machine file that is not gitignored, is a warning and does not make this false. */
+/** Every repo resolved, with a usable manifest and per-machine file, and no code repository
+ *  fixing an em version of its own (GH #546). A remote that differs, or a per-machine file that
+ *  is not gitignored, is a warning and does not make this false. */
 export function reposCheckOk(report: ReposCheckReport): boolean {
-  return report.manifestProblem === null && report.localFileProblems.length === 0 && report.repos.every((r) => r.status === "resolved");
+  return (
+    report.manifestProblem === null &&
+    report.localFileProblems.length === 0 &&
+    report.repos.every((r) => r.status === "resolved") &&
+    report.ownEmPins.length === 0
+  );
 }
 
 export function buildReposCheckJson(report: ReposCheckReport): string {
@@ -41,6 +53,8 @@ export function buildReposCheckJson(report: ReposCheckReport): string {
       localFile: report.localFile,
       localFileProblems: report.localFileProblems,
       localFileIgnored: report.localFileIgnored,
+      emPin: report.emPin,
+      ownEmPins: report.ownEmPins,
       repos: report.repos.map((r) => ({
         id: r.id,
         remote: r.remote,
@@ -55,6 +69,7 @@ export function buildReposCheckJson(report: ReposCheckReport): string {
         resolved: report.repos.filter((r) => r.status === "resolved").length,
         missing: report.repos.filter((r) => r.status === "missing").length,
         notAGitRepo: report.repos.filter((r) => r.status === "not-a-git-repo").length,
+        ownEmPins: report.ownEmPins.length,
       },
     },
     null,
@@ -87,6 +102,18 @@ export function renderReposCheckText(report: ReposCheckReport): string {
   for (const p of report.localFileProblems) lines.push(`${REPOS_LOCAL_FILE}: ${p} — the file was not used`);
   if (report.localFile !== null && report.localFileIgnored === false) {
     lines.push(`warning: ${REPOS_LOCAL_FILE} is not gitignored — it holds this machine's paths; add \`.em/*.local.yaml\` to .gitignore`);
+  }
+  // GH #546: one em pin, in the model's repository.
+  const codeRepos = report.repos.filter((r) => r.id !== "self");
+  if (codeRepos.length > 0 || report.ownEmPins.length > 0) {
+    lines.push(
+      report.emPin
+        ? `em pin: ${report.emPin.version} (${report.emPin.file}, in the model's repository) — every repository runs em at this version`
+        : "em pin: none — the model's repository has no .em-version, so nothing fixes the em version the code repositories run",
+    );
+    for (const p of report.ownEmPins) {
+      lines.push(`  ${p.repo}: ${p.file} fixes em ${p.version} itself — remove it; a code repository runs em at the version the model's repository pins`);
+    }
   }
   const unresolved = report.repos.filter((r) => r.status !== "resolved").length;
   lines.push(unresolved === 0 ? `${report.repos.length} of ${report.repos.length} repos resolved` : `${report.repos.length - unresolved} of ${report.repos.length} repos resolved, ${unresolved} not`);
