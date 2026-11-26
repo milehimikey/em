@@ -3604,9 +3604,10 @@ query
   .option("--persona <p>", "match a slice with a ui in this @Persona")
   .option("--tag <t>", "match a slice with an event carrying this tag key")
   .option("--storyline <name>", "match a slice declared in this `storyline` block")
+  .option("--repo <id>", "match a slice with an element placed in this repo id by the model's code-map.yaml (`self` = the model's own repository)")
   .option("--json", "print a JSON document instead of the text report")
-  .action((files: string[], opts: { pattern?: string; status?: string; context?: string; persona?: string; tag?: string; storyline?: string; json?: boolean }) => {
-    const filters = { pattern: opts.pattern, status: opts.status, context: opts.context, persona: opts.persona, tag: opts.tag, storyline: opts.storyline };
+  .action((files: string[], opts: { pattern?: string; status?: string; context?: string; persona?: string; tag?: string; storyline?: string; repo?: string; json?: boolean }) => {
+    const filters = { pattern: opts.pattern, status: opts.status, context: opts.context, persona: opts.persona, tag: opts.tag, storyline: opts.storyline, ...(opts.repo === undefined ? {} : { repo: opts.repo }) };
     runQueryVerb(files, "slices", filters, opts.json, (s) => querySlices(s, filters), formatSlices);
   });
 

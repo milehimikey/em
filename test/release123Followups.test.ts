@@ -238,7 +238,7 @@ describe("model export carries the amendment record and the sections", () => {
     const res = em(["export", "model.em"], dir);
     expect(res.status).toBe(0);
     const out = JSON.parse(res.stdout);
-    expect(out.schemaVersion).toBe("1.22");
+    expect(out.schemaVersion).toBe("1.23");
     const ship = out.model.slices.find((s: { key: string }) => s.key === "ship").doc;
     expect(ship.amendedBy).toBe("Sam");
     expect(ship.amendedOn).toBe("2026-02-01");

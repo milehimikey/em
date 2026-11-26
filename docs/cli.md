@@ -1075,6 +1075,44 @@ the source text, so a consumer can tell whether an export is stale without re-ru
   collision names both colliding entities). Never a second identifier scheme — always the
   same refs/keys the `model` section above uses.
 
+**Derived places** (schema `1.23`, GH #529, em 1.24.0). When the model has a
+[`code-map.yaml`](code-map-schema.md) beside it, the export says where each element's code lives.
+A place is `{ "repo": <repo id>, "root": <path> }`: `repo` is an id from `system.yaml`'s `repos:`
+or `self` (the model's own repository), and `root` is a path inside that repository, `""` for its
+root.
+
+```json
+{
+  "model": {
+    "slices": [
+      {
+        "key": "take-payment",
+        "elements": [
+          { "ref": "take-payment/processor.charge-card", "places": [{ "repo": "self", "root": "services/orders" }], "placedBy": "default" },
+          { "ref": "take-payment/command.take-payment", "places": [{ "repo": "payments-svc", "root": "" }], "placedBy": "context" }
+        ],
+        "places": [{ "repo": "self", "root": "services/orders" }, { "repo": "payments-svc", "root": "" }]
+      }
+    ],
+    "places": [{ "repo": "self", "root": "services/orders" }, { "repo": "payments-svc", "root": "" }]
+  }
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `element.places` | Where the element lives. One place from any code-map rule; `[]` when the map does not place it (`em validate` reports `code-map-element-unplaced`) |
+| `element.placedBy` | The rule that placed it: `"element"` (an override), `"persona"`, `"context"` or `"default"`; `null` when unplaced. The routing rules are in [code-map-schema.md](code-map-schema.md#routing) |
+| `slice.places` | The places of that slice's elements, each once, in first-appearance order. Two entries with different `repo` mean the slice's code is in two repositories |
+| `model.places` | Every place the model uses, each once, in first-appearance order |
+
+**These four keys are absent, not `null`, for a model with no code map.** Every other export key
+is always present; these are the exception, so that a project whose model and code share one
+repository exports byte-identical JSON apart from `schemaVersion`. A reader tests for the key.
+A `code-map.yaml` that cannot be read or parsed publishes no places, and its `code-map-invalid`
+error is in the export's `diagnostics`. Like a slice-doc problem it does not make `em export`
+exit non-zero: `em validate` is the gate for the code map.
+
 **Stable identity.** `ref`/`key` are edit-stable: inserting or reordering slices never changes
 an existing slice's `key` or an existing element's `ref` (only `index` moves). A rename does
 change identity — that's intentional, a rename is a model change. These refs are NOT the same
@@ -3206,6 +3244,8 @@ model with compile errors.
 | `--context <c>` | `slices` | Match a slice with an event in this `@Context` |
 | `--persona <p>` | `slices` | Match a slice with a `ui` in this `@Persona` |
 | `--tag <t>` | `slices` | Match a slice with an event carrying this tag key |
+| `--storyline <name>` | `slices` | Match a slice declared in this `storyline` block |
+| `--repo <id>` | `slices` | Match a slice with an element placed in this repo id by the model's `code-map.yaml` (`self` is the model's own repository). A model with no code map has no places, so none of its slices match |
 | `--id <inv-id>` | `invariant` | The `INV-*` id to look up (**required**) |
 | `--tests <dir>` | `invariant` | Directory to scan for test files citing this id (reuses `em coverage`'s own citation scan) |
 | `--name <field>` | `field` | The field's name (**required**) |
@@ -3219,6 +3259,7 @@ em query downstream model.em --of "Place Order" --depth 2     # impact analysis,
 em query upstream model.em --of "Order Shipped"                # what feeds this event
 em query slices model.em --status ready-to-implement --context Payment
 em query slices model.em --storyline "Retire a product"        # one story's slices (GH #277)
+em query slices model.em --repo payments-svc                    # slices with code in that repo (GH #529)
 em query invariant model.em --id INV-CHK-3 --tests test/       # + who cites it
 em query field model.em --of "Order Placed" --name total       # type/tag/renamed-from facts
 em query path model.em --from "Checkout Screen" --to "Order Shipped"
@@ -3236,14 +3277,14 @@ $ echo $?
 0
 ```
 
-**`--json` shape** (`querySchemaVersion: "1.3"`, versioned independently of the npm package and
+**`--json` shape** (`querySchemaVersion: "1.4"`, versioned independently of the npm package and
 every other command's own schema — also the exact document the MCP `query` tool returns, see
 [mcp.md](mcp.md)): one envelope for every verb, with a `verb` discriminator and a `results` array
 whose entries are verb-shaped:
 
 ```json
 {
-  "querySchemaVersion": "1.3",
+  "querySchemaVersion": "1.4",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "verb": "consumers",
   "files": ["model.em"],
@@ -3263,7 +3304,12 @@ whose entries are verb-shaped:
 - `slices` results carry `{ ref, name, index, pattern, status, storyline, personas, contexts, tags }`
   (`storyline` since query schema `1.3`, GH #277: the `storyline` block the slice is declared in, or
   `null`). `em query slices --storyline <name>` keeps only that storyline's slices; an unknown name is an
-  error listing the declared ones.
+  error listing the declared ones. Since query schema `1.4` (GH #529) a slice of a model that has a
+  [`code-map.yaml`](code-map-schema.md) also carries `places`, `{ repo, root }[]`: the places its
+  elements live in, the same list `em export` gives as `slice.places`. The key is absent for a
+  model with no code map. `--repo <id>` keeps the slices with a place in that repo, and is echoed
+  in `args` only when given, so a query without it answers as it did in `1.3` apart from the
+  version.
 - `invariant` results carry `{ id, sliceRef, sliceName, docPath, status, citations, rule, declaredIn }` —
   `citations` is `null` when `--tests` wasn't given, else `{ file, line }[]` (possibly empty).
   `declaredIn` (query schema 1.2, MIL-265) is `"model"` for an id declared by an `invariant`

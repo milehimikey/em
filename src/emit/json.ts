@@ -26,6 +26,9 @@ import {
   resolveScalarRef,
   resolveTypeRef,
 } from "../model/model.js";
+import { loadModelPlaces } from "../codemap/modelPlaces.js";
+import type { Place } from "../codemap/codeMap.js";
+import type { PlacedBy } from "../codemap/places.js";
 import { Field } from "../parser/ast.js";
 import { Diagnostic, serializeDiagnostic } from "../model/validate.js";
 import { RefsResult } from "../model/refs.js";
@@ -226,7 +229,22 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // list) with whether it changed since sign-off (`true`/`false`, or `null` when the doc records no
 // section hashes), `null` when no usable doc is bound. The same values `em export --doc-json`
 // has carried since doc-json 1.1 / 1.2. Additive-only.
-export const SCHEMA_VERSION = "1.22";
+// 1.23 (GH #529, em 1.24.0): derived places, published only for a model that has a
+// `code-map.yaml` beside it (docs/code-map-schema.md). A place is `{ repo, root }`: a repo id
+// (`self` = the model's own repository) and a root path inside it (`""` = the repository root).
+//  - `model.places: Place[]` — every place the model's elements live in, each once, in
+//    first-appearance order.
+//  - `slice.places: Place[]` — the places of that slice's elements, same ordering.
+//  - `element.places: Place[]` and `element.placedBy` — where the element lives and which rule
+//    placed it (`"element"` | `"persona"` | `"context"` | `"default"`), or `[]`
+//    and `null` for an element the map does not place (`em validate` reports it as
+//    `code-map-element-unplaced`).
+// Unlike every earlier addition these four keys are ABSENT, not null, for a model with no code
+// map: a project whose model and code share one repository must export byte-identical output
+// apart from this version string. A code map that cannot be read or parsed adds its
+// `code-map-invalid` diagnostics to `diagnostics` and publishes no places; like the doc-join
+// diagnostics it does not block the export (`em validate` is the gate). Additive-only.
+export const SCHEMA_VERSION = "1.23";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */
@@ -307,6 +325,9 @@ export interface ElementExport {
    *  other kind and on an element with none. Declaration order; `rule` is `null` when the
    *  `invariant` line gives no quoted rule. */
   invariants: { id: string; rule: string | null }[] | null;
+  /** Schema 1.23, GH #529: present only when the model has a code map. */
+  places?: Place[];
+  placedBy?: PlacedBy | null;
 }
 
 /** One semantic edge's exported shape (`model.edges[]`, schema 1.10 / MIL-191): both endpoints
@@ -372,6 +393,8 @@ export interface SliceExport {
    *  `again` slice's own doc by hand. */
   alsoReads: AlsoReadsExport[];
   elements: ElementExport[];
+  /** Schema 1.23, GH #529: present only when the model has a code map. */
+  places?: Place[];
 }
 
 /** The `em export` document's shape, pre-stringify — what `buildExportDoc` returns and
@@ -408,6 +431,8 @@ export interface ExportDoc {
     storylineEdges: { from: string; to: string; kind: "after" | "reads"; elements: { name: string; ref: string }[] }[];
     arrows: unknown[];
     edges: EdgeExport[];
+    /** Schema 1.23, GH #529: present only when the model has a code map. */
+    places?: Place[];
   };
   diagnostics: ReturnType<typeof serializeDiagnostic>[];
 }
@@ -633,6 +658,12 @@ export function buildExportDoc(
   const refOf = (id: string | undefined): string | null =>
     id ? refById.get(id) ?? null : null;
 
+  // GH #529, schema 1.23: derived places — see SCHEMA_VERSION's own comment. `places.kind` is
+  // "none" for every model with no code map, and then nothing below adds a key.
+  const places = loadModelPlaces(path, model, refs);
+  if (places.kind === "invalid") docDiagnostics.push(...places.diagnostics);
+  const copyPlaces = (list: Place[]): Place[] => list.map((p) => ({ repo: p.repo, root: p.root }));
+
   const fromOf = (el: Element): { name: string; ref: string | null }[] | null => {
     if (!el.from || el.from.length === 0) return null;
     return el.from.map((name) => ({ name, ref: refOf(resolveByName(model.byName, name)) }));
@@ -751,7 +782,14 @@ export function buildExportDoc(
           el.invariants && el.invariants.length > 0
             ? el.invariants.map((inv) => ({ id: inv.id, rule: inv.rule }))
             : null,
+        ...(places.kind === "ok"
+          ? (() => {
+              const placed = places.placement.byRef.get(refById.get(el.id)!)!;
+              return { places: copyPlaces(placed.places), placedBy: placed.placedBy };
+            })()
+          : {}),
       })),
+      ...(places.kind === "ok" ? { places: copyPlaces(places.bySlice[sliceIndex]) } : {}),
     };
   });
 
@@ -831,6 +869,7 @@ export function buildExportDoc(
         to: refById.get(e.to)!,
         source: e.source,
       })),
+      ...(places.kind === "ok" ? { places: copyPlaces(places.all) } : {}),
     },
     diagnostics: allDiagnostics.map(serializeDiagnostic),
   };
