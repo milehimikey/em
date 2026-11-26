@@ -130,7 +130,7 @@ describe("derivePlaces", () => {
   });
 
   it("routes a reaction with its trigger, so an Automation slice can span two repos", () => {
-    expect(place(map, "take-payment/processor.charge-card")).toBe("orders-svc:services/orders (default)");
+    expect(place(map, "take-payment/processor.charge-card")).toBe("orders-svc:services/orders (reads)");
     const takePayment = model.slices.findIndex((s) => s.name === "Take Payment");
     expect(slicePlaces(model, refs, derivePlaces(model, refs, map), takePayment).map(formatPlace)).toEqual(["orders-svc:services/orders", "payments-svc"]);
   });
@@ -145,6 +145,34 @@ describe("derivePlaces", () => {
     );
     const fixed = mapOf(MAP + `elements:\n  receipts/view.receipts: {repo: storefront-web, root: src/receipts}\n`);
     expect(place(fixed, "receipts/view.receipts")).toBe("storefront-web:src/receipts (element)");
+  });
+
+  it("a reaction follows the PLACE of what it reads: an override on the view moves the reaction too", () => {
+    const m = mapOf(MAP + `elements:\n  orders-to-charge/view.orders-to-charge: {repo: payments-svc, root: queue}\n`);
+    expect(place(m, "take-payment/processor.charge-card")).toBe("payments-svc:queue (reads)");
+  });
+
+  it("a reaction reading an unplaced view is unplaced for that reason, and an override on the view settles both", () => {
+    const src = MODEL + `slice "Mail Receipt" {\n  processor Receipt Mailer from "Receipts"\n  command Mail Receipt\n  event Receipt Mailed @Orders\n}\n`;
+    const c = compile(src);
+    const at = (m: CodeMap, ref: string) => {
+      const p = derivePlaces(c.model, c.refs, m).byRef.get(ref)!;
+      return p.places.length > 0 ? `${p.places.map(formatPlace).join(" + ")} (${p.placedBy})` : `unplaced: ${p.unplacedReason}`;
+    };
+    expect(at(map, "mail-receipt/processor.receipt-mailer")).toBe('unplaced: what it reads has no place (view "Receipts" -> no place)');
+    const fixed = mapOf(MAP + `elements:\n  receipts/view.receipts: {repo: storefront-web, root: src/receipts}\n`);
+    expect(at(fixed, "mail-receipt/processor.receipt-mailer")).toBe("storefront-web:src/receipts (reads)");
+  });
+
+  it("a view named by a storyline written later but first on the timeline routes its readers with it", () => {
+    // `again` instances resolve through logicalId; the reaction must use the same first instance.
+    const c = compile(MODEL);
+    const again = c.model.elements.find((e) => e.kind === "view" && e.again === true)!;
+    const first = c.model.byId.get(again.logicalId)!;
+    expect(first.again).not.toBe(true);
+    const m = mapOf(MAP + `elements:\n  ${c.refs.refById.get(first.id)}: {repo: payments-svc, root: q}\n`);
+    expect(place(m, c.refs.refById.get(again.id)!)).toBe("payments-svc:q (element)");
+    expect(place(m, "take-payment/processor.charge-card")).toBe("payments-svc:q (reads)");
   });
 
   it("an override on a first instance carries to its later instances", () => {
@@ -278,8 +306,30 @@ describe("validateCodeMap and the manifest lookup", () => {
     expect(validateCodeMap(model, refs, noDefault.modelFile, [{ repo: "self", root: "src" }])).toEqual([]);
   });
 
+  it("a malformed map that names another model in the directory is still not reported against this one", () => {
+    const { root, modelFile } = project({ "models/shop/code-map.yaml": `codeMapSchemaVersion: "1.0"\nmodel: other.em\ndefault: {path: x}\n` });
+    writeFileSync(join(root, "models", "shop", "other.em"), MODEL);
+    expect(validateCodeMap(model, refs, modelFile)).toEqual([]);
+  });
+
+  it("model: naming no file in the directory is an error, not a silently ignored map", () => {
+    const { modelFile } = project({ "models/shop/code-map.yaml": `codeMapSchemaVersion: "1.0"\nmodel: Shop.em\ndefault: {root: src}\n` });
+    const diags = validateCodeMap(model, refs, modelFile);
+    expect(diags).toEqual([
+      { severity: "error", code: "code-map-invalid", message: 'code-map.yaml: `model: Shop.em` names no file in this directory — it must be the model file\'s exact name (this is "shop.em")', line: 2, file: "code-map.yaml" },
+    ]);
+  });
+
+  it("the default hint is given only when a default would help", () => {
+    const { modelFile } = project({ "system.yaml": SYSTEM, "models/shop/code-map.yaml": MAP });
+    const msg = validateCodeMap(model, refs, modelFile)[0].message;
+    expect(msg).toContain("add `receipts/view.receipts` under `elements:` in code-map.yaml");
+    expect(msg).not.toContain("give the map a `default:`");
+  });
+
   it("a map whose model: names another file is not this model's", () => {
-    const { modelFile } = project({ "models/shop/code-map.yaml": `codeMapSchemaVersion: "1.0"\nmodel: other.em\ndefault: {repo: nowhere}\n` });
+    const { root, modelFile } = project({ "models/shop/code-map.yaml": `codeMapSchemaVersion: "1.0"\nmodel: other.em\ndefault: {repo: nowhere}\n` });
+    writeFileSync(join(root, "models", "shop", "other.em"), MODEL);
     expect(validateCodeMap(model, refs, modelFile)).toEqual([]);
   });
 });

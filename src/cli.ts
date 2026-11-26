@@ -2277,6 +2277,7 @@ program
 
     const skipGit = !!opts.full || lastConformance === null;
     let changedPaths: string[] = [];
+    let boundPrefix = "";
     if (!skipGit) {
       const result = changedPathsSince(opts.repo, lastConformance!.revision);
       if (!result.ok) {
@@ -2284,9 +2285,10 @@ program
         process.exit(1);
       }
       changedPaths = result.paths;
+      boundPrefix = result.boundPrefix;
     }
 
-    const scope = buildConformScope(facts, lastConformance, changedPaths, !!opts.full);
+    const scope = buildConformScope(facts, lastConformance, changedPaths, !!opts.full, boundPrefix);
     const output: Record<string, unknown> = { ...scope };
     if (stateFileMismatch) {
       output.stateFile = { error: stateFileMismatch };

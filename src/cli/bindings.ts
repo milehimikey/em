@@ -338,7 +338,8 @@ export function boundFilesForSlice(modelDir: string, sliceKey: string): string[]
   if (!parsed.ok) return [];
   const files = new Set<string>();
   const add = (f: string): void => {
-    const clean = f.trim().replace(/^\.\//, "");
+    // posix, no leading `./`: the form `git diff --name-only` prints, whatever the author typed.
+    const clean = f.trim().replace(/\\/g, "/").replace(/^(\.\/)+/, "");
     if (clean) files.add(clean);
   };
   for (const el of parsed.doc.elements) add(el.file);
