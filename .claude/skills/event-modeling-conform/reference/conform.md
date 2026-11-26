@@ -86,9 +86,13 @@ authoritative.
 Run `em conform-scope <model-name>.em --repo <target-repo-path>` — it mechanizes everything
 about scoping that's deterministic: parsing `Last conformance:` (via the same state-file reader
 `em state read` uses), running `git diff --name-only <revision>..HEAD` in the target repo, and
-mapping each changed path to a slice via that slice doc's `implementedIn:` link (a bare/embedded
-repo-relative path that's a prefix of or equal to the changed path — a URL-only `implementedIn`,
-e.g. a PR link, deterministically matches nothing). It prints one JSON document
+mapping each changed path to a slice two ways: the slice's bindings manifest names exactly that
+file (`matchedBy: "bindings"`), or the slice doc's `implementedIn:` link is a repo-relative path
+that's a prefix of or equal to the changed path (`matchedBy: "implementedIn"`). A URL-only
+`implementedIn`, which is what `em slice mark-implemented` writes, matches nothing by itself, so
+a slice with a PR link and no bindings manifest is never a diff-scoped candidate: its changed
+files land in `unmappedPaths`, and backfilling its manifest (step 2) is what fixes that for the
+next run. It prints one JSON document
 (`docs/cli.md`'s conform-scope section documents the envelope):
 
 ```json
