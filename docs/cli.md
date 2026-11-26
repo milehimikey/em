@@ -2380,17 +2380,31 @@ likely shipped code since the last conform sweep, and so are due a fresh evidenc
 whose `implementedIn` is a URL (a PR/commit link, no path information) counts only through its
 bindings manifest, same as `em conform-scope`'s own rule (GH #523: before 1.24.0 such a slice never
 counted, so the number was always 0 for a project whose slices were flipped by
-`em slice mark-implemented`). Like `commitsBehindHead`, it's
+`em slice mark-implemented`).
+
+**Code in several repositories** (since 1.24.0, GH #533). For a model with a
+[`code-map.yaml`](code-map-schema.md), or whose `Last conformance:` records
+[one revision per repository](#one-revision-per-repository), each repository is compared at its
+own recorded revision. `commitsBehindHead` and `slicePRsBehindHead` are then totals, and the
+entry gains `repos: [{ repo, revision, commitsBehindHead, error }]`, one per repository. A
+repository that cannot be compared (no checkout on this machine, no revision recorded for it)
+has its reason in `repos[].error` and is left out of the totals; the text line then ends
+`(1 of 2 repos compared — not storefront-web)`. Only when no repository can be compared is the
+entry's own `error` set. `repos` is absent for a single-repository model, whose entry is
+unchanged. Repo ids resolve as in [`em conform-scope`](#em-conform-scope-file); `--repo` is
+repeatable as `<id>=<path>`.
+
+Like `commitsBehindHead`, it's
 `null` exactly when the conformance record couldn't be verified at all (see `error` below) — a
 `null` here is never the same fact as "0 slice-PRs behind," so it's never coalesced to 0.
 
-**`--json` shape** (`statusSchemaVersion: "1.13"`, versioned independently of the npm package and
+**`--json` shape** (`statusSchemaVersion: "1.14"`, versioned independently of the npm package and
 every other command's own schema — this is also the exact document the MCP `status` tool returns,
 see [mcp.md](mcp.md)):
 
 ```json
 {
-  "statusSchemaVersion": "1.13",
+  "statusSchemaVersion": "1.14",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "files": ["model.em"],
   "slices": {
@@ -2606,7 +2620,7 @@ same facts, not a second implementation of them.
 
 | Flag | Effect |
 |---|---|
-| `--repo <path>` | Git repo to compute behind-HEAD in (default: the model's own directory) |
+| `--repo <path>` | Git repo to compute behind-HEAD in (default: the model's own directory). Repeatable as `--repo <id>=<path>` for a model whose code is in several repositories |
 | `--json` | Print a JSON document instead of the text line |
 
 ```bash
@@ -2619,14 +2633,14 @@ The model must compile without errors (same refusal convention as `em status`). 
 diagnostics (`binding-missing-file`/`frontmatter-invalid`) are printed to stderr, non-fatal, same
 as `em status`.
 
-**`--json` shape** (`freshnessSchemaVersion: "1.2"` — this is also the exact document the MCP
+**`--json` shape** (`freshnessSchemaVersion: "1.3"` — this is also the exact document the MCP
 `freshness` tool returns, see [mcp.md](mcp.md)): the envelope wraps the model's single
 `ConformanceEntry` verbatim, the same shape one entry of `em status --json`'s `conformance[]`
 array carries:
 
 ```json
 {
-  "freshnessSchemaVersion": "1.2",
+  "freshnessSchemaVersion": "1.3",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "file": "model.em",
   "modelDir": ".",
@@ -5809,9 +5823,45 @@ sub-directory of its work tree the file is matched under that sub-directory. A s
 `implementedIn` nor a manifest is still never a diff-scoped candidate; its changed files come back
 in `unmappedPaths`.
 
+**Several repositories** (since 1.24.0, GH #533). When the model's code is in more than one
+repository — it has a [`code-map.yaml`](code-map-schema.md), a bindings file names a `repo:`, or
+`Last conformance:` records [one revision per repository](#one-revision-per-repository) — each
+repository is diffed on its own, at the revision recorded for it:
+
+```json
+{
+  "lastConformance": { "date": "2026-11-25", "revision": "checkout-svc=4f2a9c1,storefront-web=b81d0e7", "partial": false },
+  "changedPaths": ["storefront-web:src/checkout/CheckoutPage.tsx", "checkout-svc:src/orders/Handler.kt", "checkout-svc:README.md"],
+  "candidateSlices": [
+    { "key": "place-order", "matchedBy": "bindings", "paths": ["storefront-web:src/checkout/CheckoutPage.tsx", "checkout-svc:src/orders/Handler.kt"], "file": null }
+  ],
+  "unmappedPaths": ["checkout-svc:README.md"],
+  "repos": [
+    { "repo": "storefront-web", "revision": "b81d0e7", "changedPaths": ["src/checkout/CheckoutPage.tsx"], "unmappedPaths": [], "error": null },
+    { "repo": "checkout-svc", "revision": "4f2a9c1", "changedPaths": ["src/orders/Handler.kt", "README.md"], "unmappedPaths": ["README.md"], "error": null }
+  ]
+}
+```
+
+- Every path in `changedPaths`, `candidateSlices[].paths` and `unmappedPaths` is written
+  `<repo>:<path>`, so one list carries them all.
+- `repos` (present only in this case) has one entry per repository in play: the revision recorded
+  for it, its own changed and unmapped paths as plain repo-relative paths, and `error`.
+- A bound file is matched within its own repo: the binding's `repo:`, else the slice's one
+  repository from the code map. An `implementedIn:` path, which never said which repository it
+  is in, matches in any of them.
+- Repo ids resolve as [`em repos check`](#em-repos-check-target) reports: `--repo <id>=<path>`,
+  `.em/repos.local.yaml`, a sibling directory. Checked out side by side, no flag is needed. A
+  bare `--repo <path>` is accepted when the code is in exactly one repository, and refused
+  (exit 1) when it is in several.
+- **A repository that cannot be compared does not fail the command.** Its entry carries `error`
+  (no checkout on this machine, no revision recorded for it, an unknown revision), its paths are
+  empty, and the rest are still compared. Nothing is fetched.
+- A plain recorded revision with one code repository is that repository's revision.
+
 | Flag | Effect |
 |---|---|
-| `--repo <path>` | Path to (or inside) the target codebase's git repository (required) |
+| `--repo <path>` | Path to (or inside) the target codebase's git repository. Optional since 1.24.0: without it, the model's own repository. Repeatable as `--repo <id>=<path>` when the model's code is in several repositories (see **Several repositories** below) |
 | `--full` | Ignore `Last conformance:`/changed paths; scope every `implemented` slice |
 | `--seed-asis` | Also seed the conform-phase scratch model (see below) |
 

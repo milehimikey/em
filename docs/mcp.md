@@ -104,8 +104,8 @@ working directory — the same working-directory convention every `em` CLI comma
 | `diff` | `{ oldFile, newFile? }` or `{ oldFile, from, to? }` (git — see below) | The `em diff --json` document: structural changes between two models, or one model across git revisions |
 | `glossary` | `{ files, waive_file? }` | The `em glossary --json` document: cross-model term aggregation plus kind/field-type conflicts; `waive_file` moves deliberate field-type conflicts to a `waived` array |
 | `changelog` | `{ file, from?, to? }` (git — see below) | The exact markdown `em changelog` prints: the model's git history as a business-readable ledger |
-| `conform_scope` | `{ file, repo, full? }` (git — see below) | The `em conform-scope --repo <repo>` document: changed paths mapped to slices via the bindings manifest and `implementedIn` |
-| `freshness` | `{ file, repo? }` | The `em freshness <file> --json` document: one model's conformance record — last-conformed revision, commits behind HEAD, slice-PRs behind HEAD, unruled conformance findings |
+| `conform_scope` | `{ file, repo?, repos?, full? }` (git — see below) | The `em conform-scope --repo <repo>` document: changed paths mapped to slices via the bindings manifest and `implementedIn` |
+| `freshness` | `{ file, repo?, repos? }` | The `em freshness <file> --json` document: one model's conformance record — last-conformed revision, commits behind HEAD, slice-PRs behind HEAD, unruled conformance findings |
 | `metrics` | `{ file, from, to? }` (git — see below) | The `em metrics <file> --from <rev> --json` document: ratification turnaround, conform cadence + findings, status-vs-reality disagreement, computed from git history over the range |
 | `discover_triage_check` | `{ path, source? }` | The `em discover triage-check <path> --json` document: validates a `discovery/prd-triage.json` PRD/spec triage record (GH #295) |
 | `conform_findings_check` | `{ path }` | The `em conform-findings check <path> --json` document: shape-validates a `conformance/<date>-findings.json` file (MIL-214; `em slice conform` also reads `<date>-<name>-findings.json`) |

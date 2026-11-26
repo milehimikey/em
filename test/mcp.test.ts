@@ -717,7 +717,7 @@ describe("status tool", () => {
   // totals are now 0/0 for this fixture (was 2/1/1 pre-MIL-207).
   it("happy path: returns the same document `em status --json` prints (parity, MIL-163)", async () => {
     const { doc } = await callJson(client, "status", { files: [join(dir, "ready.em")], testsDir: join(dir, "tests") });
-    expect(doc.statusSchemaVersion).toBe("1.13");
+    expect(doc.statusSchemaVersion).toBe("1.14");
     expect(doc.files).toEqual([join(dir, "ready.em")]);
     expect(doc.slices.total).toBe(2); // "Ready Slice" + "Read Model"
     expect(doc.slices.byStatus.readyToImplement).toBe(1);
@@ -805,7 +805,7 @@ describe("freshness tool (MIL-164)", () => {
   it("happy path: returns the same document `em freshness --json` prints, byte-identical to status's own conformance[0]", async () => {
     const { doc: statusDoc } = await callJson(client, "status", { files: [join(dir, "ready.em")] });
     const { doc } = await callJson(client, "freshness", { file: join(dir, "ready.em") });
-    expect(doc.freshnessSchemaVersion).toBe("1.2");
+    expect(doc.freshnessSchemaVersion).toBe("1.3");
     expect(doc.file).toBe(join(dir, "ready.em"));
     expect(doc.hasStateFile).toBe(false);
     expect(doc.slicePRsBehindHead).toBeNull();
