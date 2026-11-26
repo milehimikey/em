@@ -41,6 +41,7 @@ import { validateSignedBodies } from "./catalog/signedBodyValidate.js";
 import { validateNoteBindings } from "./catalog/noteBindingValidate.js";
 import { validateDocModelConsistency } from "./catalog/docModelConsistencyValidate.js";
 import { validateOrphanedSliceDocs } from "./catalog/orphanedSliceDocValidate.js";
+import { validateCodeMap } from "./codemap/codeMapValidate.js";
 import { validateModelVersionStale } from "./catalog/modelVersionValidate.js";
 import { validateInvariants } from "./catalog/invariantsValidate.js";
 import { computeSliceReadiness } from "./catalog/sliceReadyValidate.js";
@@ -4827,6 +4828,7 @@ function computeAllDiagnostics(file: string, model: NormalizedModel, refs: RefsR
     ...validateOrphanedSliceDocs(model, refs, dirname(file)),
     ...validateModelVersionStale(model, refs, dirname(file), source),
     ...validateInvariants(model, refs, dirname(file)),
+    ...validateCodeMap(model, refs, file),
   ]);
 }
 
