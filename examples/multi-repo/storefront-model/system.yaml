@@ -1,0 +1,11 @@
+# The system manifest, in the model's repository. Schema 2.1 adds `repos:` — the one committed
+# list of the repositories this system's code lives in. No local paths here.
+systemSchemaVersion: "2.1"
+name: Storefront
+repos:
+  storefront-web: { remote: "git@github.com:example/storefront-web.git" }
+  checkout-svc:   { remote: "git@github.com:example/checkout-svc.git" }
+  payments-svc:   { remote: "git@github.com:example/payments-svc.git" }
+models:
+  checkout:
+    source: checkout/checkout.em

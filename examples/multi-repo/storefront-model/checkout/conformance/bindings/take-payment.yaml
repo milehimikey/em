@@ -1,0 +1,16 @@
+bindingsSchemaVersion: "1.1"
+slice: take-payment
+elements:
+  - ref: processor.charge-card
+    repo: checkout-svc
+    file: src/orders/ChargeCardProcessor.kt
+    identifier: ChargeCardProcessor
+  - ref: command.take-payment
+    repo: payments-svc
+    file: src/payments/TakePaymentHandler.kt
+    identifier: takePayment
+  - ref: event.payment-taken
+    repo: payments-svc
+    file: src/payments/Events.kt
+    identifier: PaymentTaken
+invariants: []

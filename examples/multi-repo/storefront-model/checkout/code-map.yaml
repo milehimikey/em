@@ -1,0 +1,14 @@
+# Where this model's code lives. A place is a repo id (from system.yaml's `repos:`, or `self`)
+# plus a root inside that repository.
+codeMapSchemaVersion: "1.0"
+
+# Everything no other rule places: the checkout service.
+default:  { repo: checkout-svc, root: src/orders }
+
+# A `ui` routes by its persona: the customer's screens are in the web app.
+personas:
+  Customer: { repo: storefront-web, root: src/checkout }
+
+# Everything else routes by context: the Payments context is its own service.
+contexts:
+  Payments: { repo: payments-svc, root: src/payments }
