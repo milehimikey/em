@@ -1832,7 +1832,7 @@ describe("engagement_plan / engagement_status tools (MIL-268)", () => {
     const file = join(lendDir, "lending.em");
     const { result, doc } = await callJson(client, "engagement_brief", { file, slug: "loans" });
     expect(result.isError).toBeFalsy();
-    expect(doc.engagementBriefSchemaVersion).toBe("1.0");
+    expect(doc.engagementBriefSchemaVersion).toBe("1.1");
     expect(doc.slices.length).toBeGreaterThan(1);
     const cli = em(["engagement", "brief", file, "loans", "--json"], lendDir);
     expect(cli.status).toBe(0);

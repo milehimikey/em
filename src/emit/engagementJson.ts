@@ -110,7 +110,13 @@ export function buildEngagementFoundationJson(file: string, slug: string, check:
 //   bindingsExample, conformCheckCommand, isolationNote, prTitle }, context[{ path, inline, content,
 //   missing }] }] }` — one brief per engagement slice (model/Ledger order), `slices` has exactly one
 //   entry when `--slice` narrowed it. The MCP `engagement_brief` tool returns the same document.
-export const ENGAGEMENT_BRIEF_SCHEMA_VERSION = "1.0";
+// 1.1 (GH #538, em 1.24.0): for a model with a code map, one brief per WORK UNIT (slice x
+//   repository) instead of one per slice: each `slices[]` entry gains `unit: { id, repo, roots,
+//   elements, marker, dependsOn, siblings[{ id, repo, roots, elements }], closingStep,
+//   bindingsHandBack, isolationNote }`, and a slice with two units appears twice. Its
+//   `ledgerState`/`ledgerBranch`/`ledgerBase`/`ledgerPr` are then that unit's record. `unit` is
+//   absent with no code map, where the document is 1.0's apart from this version.
+export const ENGAGEMENT_BRIEF_SCHEMA_VERSION = "1.1";
 
 export function buildEngagementBriefJson(brief: EngagementBrief): string {
   const doc = {

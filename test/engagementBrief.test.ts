@@ -337,7 +337,7 @@ describe("em engagement brief (CLI, GH #454)", () => {
     expect(r1.status).toBe(0);
     expect(r1.stdout).toBe(r2.stdout);
     const doc = JSON.parse(r1.stdout);
-    expect(doc.engagementBriefSchemaVersion).toBe("1.0");
+    expect(doc.engagementBriefSchemaVersion).toBe("1.1");
     expect(doc.slices).toHaveLength(3);
     expect(doc.slices.map((s: { key: string }) => s.key)).toEqual(["place-order", "order-list", "ship-order"]);
 
