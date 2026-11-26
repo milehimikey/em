@@ -2966,10 +2966,67 @@ level 2: 1 slice (ceiling 3)
   loan-history [state-view] impl/loan-history on main · state: planned
 ```
 
-`--json` prints `engagementPlanSchemaVersion: "1.6"`, `generator`, `file`, `engagement` (the
+**The unit graph** (plan schema `1.7`, GH #536, em 1.24.0). When the model has a
+[`code-map.yaml`](code-map-schema.md), a slice's code may be in more than one repository, and
+the thing that gets a worktree, a branch, an implementer and a pull request is no longer the
+slice but the **work unit**: one slice's elements in one repository. The plan derives them and
+publishes them as `units`:
+
+```json
+"units": [
+  { "id": "place-order@storefront-web", "kind": "unit", "partOf": "place-order", "repo": "storefront-web",
+    "roots": ["src/checkout"], "elements": ["place-order/ui.checkout"], "level": 0,
+    "branch": "impl/place-order", "base": "main", "prTitle": "Place Order",
+    "marker": "Em-Unit: checkout:place-order@storefront-web", "dependsOn": [] },
+  { "id": "place-order@checkout-svc", "kind": "unit", "partOf": "place-order", "repo": "checkout-svc",
+    "roots": [""], "elements": ["place-order/command.place-order", "place-order/event.order-placed"], "level": 0,
+    "branch": "impl/place-order", "base": "main", "prTitle": "Place Order",
+    "marker": "Em-Unit: checkout:place-order@checkout-svc", "dependsOn": [] },
+  { "id": "close:place-order", "kind": "close", "partOf": "place-order", "repo": "self",
+    "roots": [], "elements": [], "level": 0,
+    "branch": "close/place-order", "base": "main", "prTitle": "Place Order [close]",
+    "marker": "Em-Unit: checkout:place-order@close", "dependsOn": ["place-order@storefront-web", "place-order@checkout-svc"] }
+]
+```
+
+| Key | Meaning |
+|---|---|
+| `id` | `<sliceKey>@<repo>` for a work unit; `close:<sliceKey>` for a slice's closing step. Derived from the slice key and the repo id alone, so it is the same on every run |
+| `kind` | `"unit"`: work in one repository. `"close"`: the slice's closing step, in the model's repository |
+| `partOf` | The engagement slice (a `slices[]` key, a Ledger row) the node belongs to. A slice is done when all its nodes are |
+| `repo` | The repo id the work happens in (`system.yaml`'s `repos:`, or `self`). Resolve it to a checkout with [`em repos check`](#em-repos-check-target) |
+| `roots` | The roots inside `repo` this unit's elements are placed under (`""` is the repository root). Two places in one repository with different roots are one unit with two roots |
+| `elements` | Export refs of the slice's elements this unit builds |
+| `level` | The slice's level |
+| `branch`, `base` | The branch to cut in `repo` (the same name in every repository the slice touches) and `main`: unit pull requests never stack |
+| `prTitle` | The slice's resolved title; a closing step's ends ` [close]` |
+| `marker` | The exact line to put in the pull request body. With `branch`, it is the join key: a slice's pull requests can be found on the forge by `Em-Unit: <modelKey>:<sliceKey>@` |
+| `dependsOn` | Ids of the nodes this one waits for |
+
+`partOf` and `dependsOn` are the only relations. Nodes with the same `partOf` are siblings and
+need no edge.
+
+- **Units of one slice build in parallel**, each against the slice's generated contract. Only a
+  slice with **no `public` element** has no contract to build against; there, a unit that only
+  calls (a `ui`, a reaction) `dependsOn` the units that provide (a command, an event, a view).
+- **The closing step** `dependsOn` every work unit of its slice. It is where the binding entries
+  the implementers hand back are written and `em slice mark-implemented` is run, on a branch of
+  the model's repository. It is a node so that any harness can schedule it.
+- **`em` derives this graph and publishes it. It does not store it, run it, or hold claims.**
+  Who is working on which unit, retries, and noticing a merge belong to whatever drives the
+  work. The Ledger stays the one stored record.
+- `slices[]` and `levels[]` are unchanged: one Ledger row per slice.
+- An element the code map does not place is in no unit, and is named by a `preflight` finding
+  of kind `element-unplaced`.
+- **`units` is absent when the model has no code map.** Every slice is then its own single unit,
+  and the document is 1.6's apart from the version string.
+
+The text form lists each slice's nodes under it.
+
+`--json` prints `engagementPlanSchemaVersion: "1.7"`, `generator`, `file`, `engagement` (the
 file's path), `slug`, `status`, `tracking` (the engagement-level key or `null`), `prTitle` (the engagement's title template or `null`, added in `1.4`), `context` (the engagement's `context:` paths, `[]` when absent, added in `1.5`), `parallel`, `levels: [{ level, width, ceiling, slices }]`,
 `slices[]` (the fields above plus `key`, `pattern`, `docStatus`), level by level, and `preflight[]`
-(added in `1.2`, GH #239 — see above), and `ratifyAtHandoff[]` (added in `1.6`, GH #492 — see above). The MCP
+(added in `1.2`, GH #239 — see above), `ratifyAtHandoff[]` (added in `1.6`, GH #492 — see above), and, for a model with a code map, `units[]` (added in `1.7`, GH #536 — see above). The MCP
 `engagement_plan` tool returns the same document. Two kinds of edge never order a build and are
 left out of the levelling graph: a `loops-to` edge (it re-feeds an earlier read model) and, since
 1.19.5 (GH #378), any edge into a `view … again` instance — a continuation has no doc or PR of its own

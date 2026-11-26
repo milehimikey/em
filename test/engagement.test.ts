@@ -631,7 +631,7 @@ describe("engagement tracking key (GH #241)", () => {
     expect(em(["engagement", "new", "lifecycles.em", "cli", "--slices", "order-list", "--tracking", "PROJ-7"], dir).status).toBe(0);
     expect(readFileSync(engagementPath(file, "cli"), "utf8")).toContain('tracking: "PROJ-7"');
     const p = JSON.parse(em(["engagement", "plan", "lifecycles.em", "cli", "--json"], dir).stdout);
-    expect(p).toMatchObject({ engagementPlanSchemaVersion: "1.6", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
+    expect(p).toMatchObject({ engagementPlanSchemaVersion: "1.7", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
     const s = JSON.parse(em(["engagement", "status", "lifecycles.em", "cli", "--json"], dir).stdout);
     expect(s).toMatchObject({ engagementStatusSchemaVersion: "1.1", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
   }, 60_000);
@@ -726,7 +726,7 @@ describe("engagement prTitle template (GH #334)", () => {
     expect(em(["engagement", "new", "lifecycles.em", "titled-cli", "--slices", "order-list", "--tracking", "PROJ-7", "--pr-title", "feat: {slice} [{key}]"], dir).status).toBe(0);
     expect(readFileSync(engagementPath(file, "titled-cli"), "utf8")).toContain('prTitle: "feat: {slice} [{key}]"');
     const p = JSON.parse(em(["engagement", "plan", "lifecycles.em", "titled-cli", "--json"], dir).stdout);
-    expect(p.engagementPlanSchemaVersion).toBe("1.6");
+    expect(p.engagementPlanSchemaVersion).toBe("1.7");
     expect(p.prTitle).toBe("feat: {slice} [{key}]");
     expect(p.slices[0].prTitle).toMatch(/^feat: .+ \[PROJ-7\]$/);
   }, 60_000);
@@ -830,7 +830,7 @@ describe("engagement context documents (GH #455)", () => {
     expect(readFileSync(engagementPath(file, "docd"), "utf8")).toContain('context: ["docs/constitution.md", "docs/missing.md"]');
 
     const p = JSON.parse(em(["engagement", "plan", rel, "docd", "--json"], dir).stdout);
-    expect(p.engagementPlanSchemaVersion).toBe("1.6");
+    expect(p.engagementPlanSchemaVersion).toBe("1.7");
     expect(p.context).toEqual(["docs/constitution.md", "docs/missing.md"]);
     expect(p.preflight).toEqual([
       {
@@ -1041,7 +1041,7 @@ describe("plan pre-flight (GH #239)", () => {
     const file = write();
     create(file, "cli", { kind: "slices", keys: ["place-order", "cancel-order"] });
     const p = JSON.parse(em(["engagement", "plan", "orders.em", "cli", "--json"], dir).stdout);
-    expect(p.engagementPlanSchemaVersion).toBe("1.6");
+    expect(p.engagementPlanSchemaVersion).toBe("1.7");
     expect(p.preflight.map((f: { kind: string }) => f.kind)).toEqual(["repeated-invariant", "event-without-tag", "shared-trigger"]);
     expect(em(["engagement", "plan", "orders.em", "cli"], dir).stdout).toContain("pre-flight: 3 model-wide gap(s)");
   }, 60_000);
@@ -1100,7 +1100,7 @@ describe("plan ratify-at-handoff (GH #492)", () => {
     expect(formatEngagementPlanText(after)).not.toContain("not yet ratified");
     expect(after.slices.map((s) => [s.key, s.ready, s.held])).toEqual(before.slices.map((s) => [s.key, s.ready, s.held]));
     const j = JSON.parse(em(["engagement", "plan", "orders.em", "all", "--json"], dir).stdout);
-    expect(j.engagementPlanSchemaVersion).toBe("1.6");
+    expect(j.engagementPlanSchemaVersion).toBe("1.7");
     expect(j.ratifyAtHandoff).toEqual([]);
   }, 60_000);
 });

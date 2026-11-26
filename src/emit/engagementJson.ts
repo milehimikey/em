@@ -37,7 +37,15 @@ export const ENGAGEMENT_READABLE_VERSIONS: readonly string[] = ["1.0", "1.1", "1
 // 1.6 (GH #492): additive `ratifyAtHandoff: [{ kind, slices, command, meaningFlagRequired }]` — the
 //   engagement's `reviewed` (not yet ratified) slices and the exact ratify command(s); `[]` when none.
 //   Information only, never a hold.
-export const ENGAGEMENT_PLAN_SCHEMA_VERSION = "1.6";
+// 1.7 (GH #536, em 1.24.0): additive `units: [{ id, kind, partOf, repo, roots, elements, level,
+//   branch, base, prTitle, marker, dependsOn }]` — the unit graph for a model whose code is in
+//   more than one place: one `kind: "unit"` node per slice × repo (`id` `<sliceKey>@<repo>`) and
+//   one `kind: "close"` node per slice (`id` `close:<sliceKey>`, in the model's repository,
+//   depending on all the slice's units). `partOf` and `dependsOn` are the only relations. The key
+//   is present only when the model has a `code-map.yaml`; absent, every slice is its own single
+//   unit and the document is byte-identical to 1.6's apart from this version. A new `preflight`
+//   kind, `element-unplaced`, names an engagement slice's elements the code map does not place.
+export const ENGAGEMENT_PLAN_SCHEMA_VERSION = "1.7";
 
 // 1.0 (MIL-268): initial shape.
 // 1.1 (GH #241): additive `tracking` on the document and on each slice.
@@ -59,6 +67,7 @@ export function buildEngagementPlanJson(plan: EngagementPlan): string {
     slices: plan.slices,
     preflight: plan.preflight,
     ratifyAtHandoff: plan.ratifyAtHandoff,
+    ...(plan.units === undefined ? {} : { units: plan.units }),
   };
   return JSON.stringify(doc, null, 2);
 }
