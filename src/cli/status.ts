@@ -35,6 +35,7 @@ import { CoverageReport } from "./coverage.js";
 import { GitRunner, realGit } from "./diff-inputs.js";
 import { loadStateFile, parseState, modelPathMismatch } from "./stateFile.js";
 import { SliceDocFacts, changedPathsSince, buildConformScope } from "./conformScope.js";
+import { boundFilesForSlice } from "./bindings.js";
 import { findingsFilesOf, resolveFindingsForReport, unruledAcrossFiles } from "./sliceConform.js";
 import { findCertifiedVersion, latestModelVersionNumber, modelVersionDrift, ModelVersionSliceChange } from "./modelVersion.js";
 import { isOlder } from "../util/semver.js";
@@ -117,6 +118,9 @@ export interface SliceStatusFact {
    *  through so `resolveSlicePRsBehindHead`'s `SliceDocFacts[]` input (built from these facts)
    *  can echo it on `CandidateSlice` without a second lookup against the model. */
   sliceFile: string | null;
+  /** GH #523: the files this slice's bindings manifest names (`boundFilesForSlice`), carried
+   *  through for the same reason as `implementedIn` above. Absent or `[]` with no manifest. */
+  boundFiles?: string[];
 }
 
 export interface SliceStatusFactsResult {
@@ -184,6 +188,7 @@ export function resolveSliceStatusFacts(file: string, model: NormalizedModel, re
       publicTouching: slicePublicTouching(slice),
       meaningConfirmationRecorded: doc.meaningConfirmed || doc.contractChange !== null,
       sliceFile: slice.file ?? null,
+      boundFiles: boundFilesForSlice(baseDir, key),
     };
   });
   return { facts, diagnostics };
@@ -344,7 +349,8 @@ export function commitsBehindHead(repo: string, revision: string, runGit: GitRun
 
 /**
  * `M` in "N commits and M slice-PRs behind HEAD" (MIL-164) — how many slices whose doc's
- * `implementedIn:` names a path this model's target repo changed since `revision`. Reuses the
+ * `implementedIn:` or bindings manifest (GH #523) names a path this model's target repo changed
+ * since `revision`. Reuses the
  * exact `em conform-scope` machinery for one model at a time: `changedPathsSince` (the same
  * `git diff --name-only <revision>..HEAD` walk, same injectable `GitRunner`) to get the changed
  * paths, then `buildConformScope`'s own `implementedIn`-prefix matching (never fuzzy, never a

@@ -14,8 +14,12 @@
 //    catalog/docJoin.ts's join — the same one `em export`/`em slice index` use, never a second
 //    parse) is textually, deterministically a repo-relative path that's a prefix of (or equal
 //    to) that changed path. A URL (PR/commit link) carries no path information we can trust, so
-//    it deterministically matches nothing. Anything left over is `unmappedPaths` — the agent's
-//    judgment queue (grep fallback, evidence walks); this module never guesses.
+//    it deterministically matches nothing.
+//  - GH #523: `em slice mark-implemented` writes a PR URL there, so on the documented flow the
+//    rule above places nothing. A changed path therefore also maps to a slice when the slice's
+//    bindings manifest (`conformance/bindings/<key>.yaml`, bindings.ts) names that exact file.
+//    Anything left over is `unmappedPaths` — the agent's judgment queue (grep fallback, evidence
+//    walks); this module never guesses.
 //
 // `--seed-asis` mechanizes the OTHER mechanical convention step 1 describes: seeding
 // `<model>-asis.em` as a byte copy of the canonical model, and making sure `*-asis.em` is
@@ -30,6 +34,7 @@ import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { parse } from "../parser/parser.js";
 import { GitRunner, realGit } from "./diff-inputs.js";
 import { ParsedState } from "./stateFile.js";
+import { boundFilesForSlice } from "./bindings.js";
 
 /** The `Last conformance:` shape this module consumes — `stateFile.ts`'s own type, narrowed to
  *  non-null (a `null`/never marker is handled by the caller before this module gets involved). */
@@ -52,11 +57,17 @@ export interface SliceDocFacts {
    *  scratch file to edit without a second lookup against the model: `<model>-asis.em` when
    *  `null`, else that file's own `-asis` sibling (`seedAsisModel`, below). */
   file: string | null;
+  /** GH #523: the files this slice's bindings manifest names (`boundFilesForSlice`), repo-relative.
+   *  The path record for a slice whose `implementedIn:` is a PR URL, which is what
+   *  `em slice mark-implemented` writes. Absent or `[]` when the slice has no manifest. */
+  boundFiles?: string[];
 }
 
 export interface CandidateSlice {
   key: string;
-  matchedBy: "implementedIn" | "full";
+  /** `"implementedIn"`: the doc's `implementedIn:` is a path naming at least one changed path.
+   *  `"bindings"` (GH #523): only the slice's bindings manifest names one. `"full"`: full mode. */
+  matchedBy: "implementedIn" | "bindings" | "full";
   paths: string[];
   /** GH #451: see `SliceDocFacts.file`. */
   file: string | null;
@@ -122,9 +133,12 @@ export function buildConformScope(
   const matched = new Set<string>();
   const candidateSlices: CandidateSlice[] = [];
   for (const s of slices) {
-    const paths = matchImplementedInToPaths(s.implementedIn, changedPaths);
+    const byLink = matchImplementedInToPaths(s.implementedIn, changedPaths);
+    const bound = new Set(s.boundFiles ?? []);
+    // Both sources count; `paths` keeps `changedPaths` order, each path once.
+    const paths = bound.size === 0 ? byLink : changedPaths.filter((p) => byLink.includes(p) || bound.has(p));
     if (paths.length === 0) continue;
-    candidateSlices.push({ key: s.key, matchedBy: "implementedIn", paths, file: s.file });
+    candidateSlices.push({ key: s.key, matchedBy: byLink.length > 0 ? "implementedIn" : "bindings", paths, file: s.file });
     for (const p of paths) matched.add(p);
   }
   const unmappedPaths = changedPaths.filter((p) => !matched.has(p));
@@ -160,7 +174,14 @@ export function resolveSliceDocFacts(model: NormalizedModel, refs: RefsResult, b
     // under two different keys for one actual change. The originating slice's own fact already
     // covers it.
     if (continuationOfKey !== null) return;
-    facts.push({ key, status: doc.status, implementedIn: doc.implementedIn, shipped: doc.shipped !== null, file: slice.file ?? null });
+    facts.push({
+      key,
+      status: doc.status,
+      implementedIn: doc.implementedIn,
+      shipped: doc.shipped !== null,
+      file: slice.file ?? null,
+      boundFiles: boundFilesForSlice(baseDir, key),
+    });
   });
   return { facts, diagnostics };
 }
