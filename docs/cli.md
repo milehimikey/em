@@ -3100,6 +3100,28 @@ argument is](#slice-keys)) narrows it to one. An unknown `--slice` is refused th
 `em engagement set` refuses a slice key the Ledger doesn't hold:
 `em engagement brief: slice "<key>" is not in engagement "<slug>"`.
 
+**One brief per work unit** (since 1.24.0, GH #538). For a model with a
+[`code-map.yaml`](code-map-schema.md) a slice's code may be in more than one repository, and the
+brief is for one **work unit**: the slice's elements in one repository, the same unit the plan
+lists as `units[]` ([`em engagement plan`](#em-engagement-plan-file-slug---json)). A slice in two
+repositories gets two briefs, one per implementer; `--unit <repo>` keeps only the units in that
+repo id, so `--slice <key> --unit <repo>` is exactly one. A unit's brief differs from a slice's in
+four places:
+
+- **Header:** the unit id (`<key>@<repo>`), its repository and roots, and the line the pull
+  request body must carry (`Em-Unit: <modelKey>:<key>@<repo>`).
+- **`## Your unit`:** the elements this unit builds, then the slice's other units as read-only
+  context (what this code connects to, built by someone else), and whether to build in parallel
+  against the contract or wait for a provider.
+- **The spec** is still the whole slice's, verbatim. A unit's implementer needs to know what the
+  rest of the slice does, and em does not cut a ratified doc into pieces.
+- **Definition of done:** the unit hands back its binding entries, each with `repo:`, in the
+  pull request description, and does **not** commit a bindings file. The slice's one bindings
+  file lives in the model's repository and is written by the slice's closing step. The isolation
+  rule is stated for the unit's place.
+
+Without a code map nothing changes: one brief per slice, the same text, and `--unit` is refused.
+
 Each brief has six sections:
 
 1. **Header.** The engagement slug, the slice's key and display name, the resolved tracking key
@@ -3161,7 +3183,13 @@ each chunk still reads as its own self-contained document (each repeats the enga
 documents in full, under its own slice — there is no shared place for an external ticket to read
 them from otherwise).
 
-`--json` prints `engagementBriefSchemaVersion: "1.0"`, `generator`, `file`, `engagement` (the
+`--json` (brief schema `1.1`): for a model with a code map each `slices[]` entry is one work
+unit's brief and carries `unit: { id, repo, roots, elements, marker, dependsOn, siblings: [{ id,
+repo, roots, elements }], closingStep, bindingsHandBack, isolationNote }`, and its
+`ledgerState`/`ledgerBranch`/`ledgerBase`/`ledgerPr` are that unit's own record. `unit` is absent
+with no code map, where the document is 1.0's apart from the version string.
+
+`--json` prints `engagementBriefSchemaVersion: "1.1"`, `generator`, `file`, `engagement` (the
 engagement file's path), `slug`, `inlineContext`, and `slices: [...]` — **always an array**, one
 entry per brief, length 1 when `--slice` narrowed it: one schema serves both modes, so a consumer
 never branches on whether it's reading a single-slice or whole-engagement response. Each entry

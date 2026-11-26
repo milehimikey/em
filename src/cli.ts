@@ -3859,9 +3859,10 @@ engagement
   .argument("<file>", "input .em file")
   .argument("<slug>", "engagement slug")
   .option("--slice <key>", "only this slice's brief (export key, display name, or unique prefix)")
+  .option("--unit <repo>", "only the work units in this repo id (GH #538) — with --slice, exactly one unit's brief. For a model with a code map there is one brief per work unit (slice x repository)")
   .option("--inline-context", "embed each context document's full text instead of just its path")
   .option("--json", "print a JSON document instead of text (same document as the MCP engagement_brief tool)")
-  .action((file: string, slug: string, opts: { slice?: string; inlineContext?: boolean; json?: boolean }) => {
+  .action((file: string, slug: string, opts: { slice?: string; unit?: string; inlineContext?: boolean; json?: boolean }) => {
     const { model, refs } = compileFile(file);
     // GH #237: an input that resolves to no slice goes through as typed, so the engagement's own
     // "is not in engagement" refusal (which names what the Ledger holds) still speaks.
@@ -3870,7 +3871,7 @@ engagement
       const resolved = resolveSliceKey(model, refs, opts.slice);
       sliceKey = resolved.ok ? resolved.key : opts.slice;
     }
-    const result = engagementBriefFor({ file, model, refs, baseDir: dirname(file) }, slug, { sliceKey, inlineContext: opts.inlineContext === true });
+    const result = engagementBriefFor({ file, model, refs, baseDir: dirname(file) }, slug, { sliceKey, inlineContext: opts.inlineContext === true, unitRepo: opts.unit ?? null });
     if (!result.ok) {
       console.error(`em engagement brief: ${result.message}`);
       process.exit(1);

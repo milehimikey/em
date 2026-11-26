@@ -1408,10 +1408,11 @@ export function createServer(): McpServer {
         file: fileParam,
         slug: slugParam,
         slice: z.string().optional().describe("only this slice's brief (export key, display name, or unique prefix)"),
+        unit: z.string().optional().describe("only the work units in this repo id — for a model with a code map there is one brief per work unit (slice x repository)"),
         inlineContext: z.boolean().optional().describe("embed each context document's full text instead of just its path"),
       },
     },
-    async ({ file, slug, slice, inlineContext }) => {
+    async ({ file, slug, slice, unit, inlineContext }) => {
       const compiled = compileFile(file);
       if ("error" in compiled) return errorResult(compiled.error);
       const { model, refs } = compiled;
@@ -1422,7 +1423,7 @@ export function createServer(): McpServer {
         const resolved = resolveSliceKey(model, refs, slice);
         sliceKey = resolved.ok ? resolved.key : slice;
       }
-      const result = engagementBriefFor({ file, model, refs, baseDir: dirname(file) }, slug, { sliceKey, inlineContext: inlineContext === true });
+      const result = engagementBriefFor({ file, model, refs, baseDir: dirname(file) }, slug, { sliceKey, inlineContext: inlineContext === true, unitRepo: unit ?? null });
       if (!result.ok) return errorResult(`em engagement brief: ${result.message}`);
       return textResult(buildEngagementBriefJson(result.brief));
     },
