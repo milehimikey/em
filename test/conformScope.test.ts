@@ -63,6 +63,36 @@ describe("matchImplementedInToPaths", () => {
   });
 });
 
+describe("buildConformScope: bindings manifest paths (GH #523)", () => {
+  const last: LastConformance = { date: "2026-11-01", revision: "abc123f", report: "r.md", partial: false };
+  const url = "https://github.com/example/repo/pull/9";
+  const changed = ["src/orders/Handler.kt", "src/orders/Events.kt", "src/orders/Other.kt", "README.md"];
+
+  it("places a changed file in a URL-linked slice whose manifest names it, by exact path only", () => {
+    const slices: SliceDocFacts[] = [
+      { key: "place-order", status: "implemented", implementedIn: url, shipped: true, file: null, boundFiles: ["src/orders/Handler.kt", "src/orders"] },
+    ];
+    const scope = buildConformScope(slices, last, changed, false);
+    expect(scope.candidateSlices).toEqual([{ key: "place-order", matchedBy: "bindings", paths: ["src/orders/Handler.kt"], file: null }]);
+    expect(scope.unmappedPaths).toEqual(["src/orders/Events.kt", "src/orders/Other.kt", "README.md"]);
+  });
+
+  it("a slice matched both ways reports implementedIn and the union of paths, each once, in changedPaths order", () => {
+    const slices: SliceDocFacts[] = [
+      { key: "place-order", status: "implemented", implementedIn: "src/orders/Events.kt", shipped: true, file: null, boundFiles: ["README.md", "src/orders/Events.kt"] },
+    ];
+    const scope = buildConformScope(slices, last, changed, false);
+    expect(scope.candidateSlices).toEqual([
+      { key: "place-order", matchedBy: "implementedIn", paths: ["src/orders/Events.kt", "README.md"], file: null },
+    ]);
+  });
+
+  it("a URL-linked slice with no manifest is still not a candidate", () => {
+    const slices: SliceDocFacts[] = [{ key: "place-order", status: "implemented", implementedIn: url, shipped: true, file: null, boundFiles: [] }];
+    expect(buildConformScope(slices, last, changed, false).candidateSlices).toEqual([]);
+  });
+});
+
 describe("buildConformScope", () => {
   const slices: SliceDocFacts[] = [
     { key: "checkout", status: "implemented", implementedIn: "src/checkout", shipped: true, file: null },
