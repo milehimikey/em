@@ -167,6 +167,7 @@ built this way.
 | [docs/dsl.md](docs/dsl.md) | Full DSL reference: keywords, `from`, `again`, fields, notes |
 | [docs/cli.md](docs/cli.md) | Every command and flag |
 | [docs/validation.md](docs/validation.md) | Every rule `em validate` checks, and the fixes |
+| [docs/multi-repo.md](docs/multi-repo.md) | A model whose code is in other repositories: the layouts, which to pick, what to set up |
 | [docs/ci.md](docs/ci.md) | Copy-paste CI recipes: validate `.em` changes, the multi-model gates, run conformance on a schedule |
 | [docs/upgrading.md](docs/upgrading.md) | Bring a model repo forward across em releases: `em upgrade`, release by release |
 | [docs/timeline.md](docs/timeline.md) | The Two Laws of the Timeline |
