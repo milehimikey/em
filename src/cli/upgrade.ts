@@ -37,6 +37,7 @@ import { planMigration, verifyMigration, MigrationPlan } from "./migrateReaction
 import { planSkillSyncBundle, applySkillSyncBundle, planAgentSync, applySkillSync } from "./skillSync.js";
 import { EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR, EM_AGENT_FILES, resolveVendoredDirs } from "./skillDirs.js";
 import { detectMisePin, rewriteMiseEmPin } from "./misePin.js";
+import { findVersionPin, rewriteVersionPin, VERSION_PIN_FILENAME } from "./versionPin.js";
 import { detectPlugin, checkPlugin, claudePluginsDir, mergePluginSettings, movePluginSettings, pluginInstallCommands, pluginMarketplaceName, pluginSettingsEntries } from "./pluginPin.js";
 import { syncAgentsMd } from "./agentsMd.js";
 import {
@@ -114,7 +115,7 @@ export interface StepDetection {
 
 export type StepApplyOutcome = { ok: true; changedFiles: string[]; notes?: string[] } | { ok: false; message: string };
 
-export type UpgradeStepId = "skill-bundle" | "skill-plugin" | "plugin-pin" | "mise-pin" | "reaction-shape" | "state-file" | "ci-block" | "api-contract-missing" | "constitution" | "ratified-signoff" | "ratified-hash-scope" | "ratified-sections" | "ratified-hash-baseline" | "collapse-alternative-events" | "fold-continuations" | "view-doc-sources-stale" | "slice-index-stale" | "parking-lot-fragments" | "system-manifest" | "policy-file";
+export type UpgradeStepId = "skill-bundle" | "skill-plugin" | "plugin-pin" | "mise-pin" | "em-version-pin" | "reaction-shape" | "state-file" | "ci-block" | "api-contract-missing" | "constitution" | "ratified-signoff" | "ratified-hash-scope" | "ratified-sections" | "ratified-hash-baseline" | "collapse-alternative-events" | "fold-continuations" | "view-doc-sources-stale" | "slice-index-stale" | "parking-lot-fragments" | "system-manifest" | "policy-file";
 
 export interface UpgradeStepDef {
   id: UpgradeStepId;
@@ -295,6 +296,28 @@ function applyMisePinStep(ctx: UpgradeContext): StepApplyOutcome {
   if (next === null || next === text) return { ok: false, message: `${relative(ctx.repoRoot, pin.file)}: could not rewrite the pin — nothing changed` };
   writeFileSync(pin.file, next);
   return { ok: true, changedFiles: [relative(ctx.repoRoot, pin.file)] };
+}
+
+// ---- Step 1d: em-version-pin (GH #223) — the `.em-version` pin follows the installed em. ----
+// `em upgrade` is never dispatched to the pinned em (versionPin.ts, dispatchExempt), which is what
+// lets this step run as the em it moves the pin to.
+
+function detectEmVersionPinStep(ctx: UpgradeContext): StepDetection {
+  const pin = findVersionPin(ctx.repoRoot, ctx.repoRoot);
+  if (!pin) return { applicable: false, reason: `no ${VERSION_PIN_FILENAME} in the repo — nothing to move` };
+  const rel = relative(ctx.repoRoot, pin.source);
+  if (pin.version === ctx.installedVersion) return { applicable: false, reason: `${rel} already pins em at ${ctx.installedVersion}` };
+  return { applicable: true, reason: `${rel} pins em at ${pin.version}, installed em is ${ctx.installedVersion} — rewrite the version in place` };
+}
+
+function applyEmVersionPinStep(ctx: UpgradeContext): StepApplyOutcome {
+  const pin = findVersionPin(ctx.repoRoot, ctx.repoRoot);
+  if (!pin) return { ok: false, message: `no ${VERSION_PIN_FILENAME} found — nothing changed` };
+  const text = readFileSync(pin.source, "utf8");
+  const next = rewriteVersionPin(text, ctx.installedVersion);
+  if (next === null || next === text) return { ok: false, message: `${relative(ctx.repoRoot, pin.source)}: could not rewrite the pin — nothing changed` };
+  writeFileSync(pin.source, next);
+  return { ok: true, changedFiles: [relative(ctx.repoRoot, pin.source)] };
 }
 
 // ---- Step 2: reaction-shape — delegates to `em migrate`'s own plan/verify/apply. ----
@@ -1433,6 +1456,7 @@ export const UPGRADE_STEPS: readonly UpgradeStepDef[] = [
   { id: "skill-bundle", sinceVersion: "1.7.0", detect: detectSkillBundle, apply: applySkillBundle },
   { id: "plugin-pin", sinceVersion: "1.23.0", detect: detectPluginPinStep, apply: applyPluginPinStep },
   { id: "mise-pin", sinceVersion: "1.23.0", detect: detectMisePinStep, apply: applyMisePinStep },
+  { id: "em-version-pin", sinceVersion: "1.24.0", detect: detectEmVersionPinStep, apply: applyEmVersionPinStep },
   { id: "reaction-shape", sinceVersion: "1.8.0", detect: detectReactionShape, apply: applyReactionShape },
   { id: "state-file", sinceVersion: "1.13.0", detect: detectStateFile, apply: applyStateFile },
   { id: "ci-block", sinceVersion: "1.9.0", detect: detectCiBlock, apply: applyCiBlock },

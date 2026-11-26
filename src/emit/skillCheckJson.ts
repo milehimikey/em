@@ -16,7 +16,10 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // 1.2 (GH #298): findings gain misePin / miseFile (null unless `code` is `mise-pin-mismatch`); new
 //     finding code mise-pin-mismatch (the mise.toml em pin disagrees with the plugin pin, or with the
 //     installed em when no plugin is declared).
-export const SKILL_CHECK_SCHEMA_VERSION = "1.2";
+// 1.3 (GH #223): findings gain emVersionPin / emVersionFile (null unless `code` is
+//     `em-version-pin-mismatch`); new finding code em-version-pin-mismatch (the `.em-version` pin
+//     disagrees with the plugin pin, or with the installed em when no plugin is declared).
+export const SKILL_CHECK_SCHEMA_VERSION = "1.3";
 
 /**
  * `SkillCheckFinding` with every optional field widened to an explicit `null`. Mapped off
@@ -41,6 +44,8 @@ function serializeFinding(f: SkillCheckFinding): SerializedFinding {
     installCommands: f.installCommands ?? null,
     misePin: f.misePin ?? null,
     miseFile: f.miseFile ?? null,
+    emVersionPin: f.emVersionPin ?? null,
+    emVersionFile: f.emVersionFile ?? null,
   };
 }
 

@@ -31,7 +31,9 @@ export type SkillCheckFindingCode =
   | "plugin-registered-at-different-ref"
   | "plugin-not-installed-locally"
   // GH #298: the mise.toml pin of the em CLI (src/cli/misePin.ts).
-  | "mise-pin-mismatch";
+  | "mise-pin-mismatch"
+  // GH #223: the `.em-version` pin of the em CLI (src/cli/versionPin.ts).
+  | "em-version-pin-mismatch";
 
 export interface SkillCheckFinding {
   code: SkillCheckFindingCode;
@@ -49,6 +51,9 @@ export interface SkillCheckFinding {
   /** `mise-pin-mismatch` only (GH #298): the version `mise.toml` pins, and the file (relative to the checked path). */
   misePin?: string;
   miseFile?: string;
+  /** `em-version-pin-mismatch` only (GH #223): the version `.em-version` pins, and the file (relative to the checked path). */
+  emVersionPin?: string;
+  emVersionFile?: string;
 }
 
 export interface SkillCheckResult {

@@ -101,13 +101,13 @@ describe("detectMisePin / checkMisePin", () => {
     expect(pluginPinVersion({ ...plugin, ref: null })).toBe("1.14.1");
   });
 
-  it("serialises the new finding fields in schema 1.2, null when unused", () => {
-    expect(SKILL_CHECK_SCHEMA_VERSION).toBe("1.2");
+  it("serialises the mise finding fields (added in schema 1.2), null when unused", () => {
+    expect(SKILL_CHECK_SCHEMA_VERSION).toBe("1.3");
     const root = tmp();
     writeFileSync(join(root, "mise.toml"), STRING_SHAPE);
     const f = checkMisePin(root, "1.23.0", null)!.finding!;
     const doc = JSON.parse(buildSkillCheckJson({ findings: [f, { code: "agent-content-drift", message: "m" }], ok: false }, "d", "1.23.0"));
-    expect(doc.skillCheckSchemaVersion).toBe("1.2");
+    expect(doc.skillCheckSchemaVersion).toBe("1.3");
     expect(doc.findings[0].misePin).toBe("1.14.1");
     expect(doc.findings[0].miseFile).toBe("mise.toml");
     expect(doc.findings[1].misePin).toBeNull();
@@ -126,7 +126,7 @@ describe("em skill check with a mise pin (CLI)", () => {
     for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
   });
 
-  function repo(misePin: string | null): string {
+  function repo(misePin: string | null, emVersionPin: string | null = null): string {
     const d = mkdtempSync(join(tmpdir(), "em-misepin-cli-"));
     dirs.push(d);
     mkdirSync(join(d, ".claude"), { recursive: true });
@@ -138,6 +138,7 @@ describe("em skill check with a mise pin (CLI)", () => {
       }),
     );
     if (misePin !== null) writeFileSync(join(d, "mise.toml"), `[tools]\n"npm:@milehimikey/em" = "${misePin}"\n`);
+    if (emVersionPin !== null) writeFileSync(join(d, ".em-version"), `${emVersionPin}\n`);
     return d;
   }
 
@@ -145,7 +146,9 @@ describe("em skill check with a mise pin (CLI)", () => {
     const plugins = mkdtempSync(join(tmpdir(), "em-misepin-reg-"));
     dirs.push(plugins);
     writeFileSync(join(plugins, "known_marketplaces.json"), JSON.stringify({ [NAME]: { source: { source: "github", repo: "milehimikey/em", ref: `v${VERSION}` } } }));
-    const env: NodeJS.ProcessEnv = { ...process.env, EM_CLAUDE_PLUGINS_DIR: plugins };
+    // EM_SKIP_VERSION_PIN: a `.em-version` that differs from this checkout would otherwise re-run
+    // the command through npx at the pinned version (versionPin.ts), which is not what is under test.
+    const env: NodeJS.ProcessEnv = { ...process.env, EM_CLAUDE_PLUGINS_DIR: plugins, EM_SKIP_VERSION_PIN: "1" };
     delete env.CI;
     const r = spawnSync(process.execPath, [TSX, CLI, ...args], { cwd, encoding: "utf8", env });
     return { status: r.status, stdout: r.stdout, stderr: r.stderr };
@@ -164,13 +167,30 @@ describe("em skill check with a mise pin (CLI)", () => {
     expect(r.stdout).toContain("1 mismatch(es)");
   });
 
-  it("reports the finding in --json (schema 1.2) and exits 1", () => {
+  it("reports the finding in --json and exits 1", () => {
     const r = em(["skill", "check", "--json"], repo("0.0.1"));
     expect(r.status).toBe(1);
     const doc = JSON.parse(r.stdout);
-    expect(doc.skillCheckSchemaVersion).toBe("1.2");
+    expect(doc.skillCheckSchemaVersion).toBe("1.3");
     expect(doc.findings.map((f: { code: string }) => f.code)).toEqual(["mise-pin-mismatch"]);
     expect(doc.findings[0].misePin).toBe("0.0.1");
+  });
+
+  it("GH #223: is green when a mise pin and a .em-version pin both agree with the plugin pin", () => {
+    const r = em(["skill", "check"], repo(VERSION, VERSION));
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain(`ok — mise pin (${VERSION}) matches`);
+    expect(r.stdout).toContain(`ok — .em-version pin (${VERSION}) matches`);
+  });
+
+  it("GH #223: two pin files that disagree cannot both pass", () => {
+    const r = em(["skill", "check", "--json"], repo(VERSION, "0.0.1"));
+    expect(r.status).toBe(1);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.findings.map((f: { code: string }) => f.code)).toEqual(["em-version-pin-mismatch"]);
+    expect(doc.findings[0].emVersionPin).toBe("0.0.1");
+    expect(doc.findings[0].emVersionFile).toBe(".em-version");
+    expect(doc.findings[0].misePin).toBeNull();
   });
 
   it("is unchanged without a mise.toml", () => {

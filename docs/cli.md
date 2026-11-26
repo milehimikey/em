@@ -5889,6 +5889,19 @@ library, and it never runs `mise`).
 |---|---|---|
 | `mise-pin-mismatch` | the mise pin is not the plugin pin's version (or, with no plugin, the installed em's); the message prints the fix line `mise use npm:@milehimikey/em@<ver>` | 1 |
 
+**`.em-version` pin (GH #223).** When a `.em-version` file (nearest directory walking up from
+`[path]`) pins the CLI, `em skill check` compares it the same way: with the plugin pin's version when
+the repo declares the plugin, and with the installed em otherwise. Because the mise pin and the
+`.em-version` pin are held to the same version, a repo that carries both is only clean when they
+agree. A repo with no `.em-version` is checked exactly as before. (An `em` that finds a
+`.em-version` naming another version re-runs the command at that version first, see
+[ai-workflow.md](ai-workflow.md#pinning-the-cli-to-the-same-version); `EM_SKIP_VERSION_PIN=1`
+turns that off.)
+
+| Code | Meaning | Exit |
+|---|---|---|
+| `em-version-pin-mismatch` | the `.em-version` pin is not the plugin pin's version (or, with no plugin, the installed em's); the message names the version to write, or run `em upgrade` | 1 |
+
 **Vendored bundle.** Checks every directory in `[path]/.claude/skills/` that belongs to the em
 skill bundle for drift against the bundle shipped with the installed `em`. Two independent
 signals are checked and reported together (never short-circuited on the first), per directory:
@@ -5928,15 +5941,16 @@ when everything agrees. Every finding is a
 defect once you've opted into running this command — `em skill check` exits 1 on any mismatch,
 same no-opt-in-flag-needed convention as `em ledger`.
 
-**`--json` shape** (`skillCheckSchemaVersion: "1.2"`, versioned independently of the npm
+**`--json` shape** (`skillCheckSchemaVersion: "1.3"`, versioned independently of the npm
 package and every other command's own schema; 1.1 added `plugin` and the plugin finding fields; 1.2
-added the `mise-pin-mismatch` code and the `misePin` / `miseFile` finding fields):
+added the `mise-pin-mismatch` code and the `misePin` / `miseFile` finding fields; 1.3 added the
+`em-version-pin-mismatch` code and the `emVersionPin` / `emVersionFile` finding fields):
 
 - `generator` — `{ name, version }` of the tool that produced the document.
 - `vendoredDir` — the root the whole bundle was checked under: `[path]/.claude/skills`, or the `--skills-dir` / detected `.agents/skills` location (GH #412).
 - `installedVersion` — the installed `em`'s own version (`em --version`).
 - `plugin` — `{ declared: true, name, ref, enabled }` when the repo declares the plugin, else `null`.
-- `findings` — `{ code, message, vendoredStamp, installedVersion, driftedFiles, pluginName, pluginRef, installCommands, misePin, miseFile }[]` across every
+- `findings` — `{ code, message, vendoredStamp, installedVersion, driftedFiles, pluginName, pluginRef, installCommands, misePin, miseFile, emVersionPin, emVersionFile }[]` across every
   bundle directory, `message` and `driftedFiles` prefixed with `[<directory>]`/`<directory>/`
   respectively so a finding always names which part of the bundle it's about. Every key is
   always present (explicit `null` when unused by `code`, so a consumer can destructure without
@@ -5949,7 +5963,9 @@ added the `mise-pin-mismatch` code and the `misePin` / `miseFile` finding fields
   packaged skill — `driftedFiles` non-null, sorted), or one of the four plugin codes above
   (`pluginName`/`pluginRef` non-null; `installCommands` is the two-command snippet when it
   applies, else `null`), or `mise-pin-mismatch` (`misePin` is the version `mise.toml` pins, `miseFile`
-  the file relative to `[path]`, `installCommands` is the one `mise use` line; all three `null` for every other code).
+  the file relative to `[path]`, `installCommands` is the one `mise use` line; all three `null` for every other code),
+  or `em-version-pin-mismatch` (`emVersionPin` is the version `.em-version` pins, `emVersionFile` the
+  file relative to `[path]`; both `null` for every other code).
 - `ok` — `true` iff the command exits 0: `findings` is empty, or holds only a
   `plugin-not-installed-locally` outside `--ci`.
 
@@ -6156,6 +6172,12 @@ The mechanical steps, in this fixed order:
    `mise.toml`, never edits one outside the repo, and never runs `mise` — run `mise install`
    afterwards. Not applicable without a pin, or when the pin already matches. It runs right after
    `skill-plugin`/`skill-bundle`, so one `em upgrade --apply` moves the CLI pin and the plugin pin together.
+3a. **`em-version-pin`** (1.24.0, GH #223) — when a `.em-version` file inside the repo pins a
+   version other than the installed em, rewrites the version in place (the line ending is kept) in
+   one commit. It never creates a `.em-version` and never edits one outside the repo. Not applicable
+   without the file, or when it already matches. `em upgrade` is the one command that is never
+   re-run at the pinned version, so this step always runs as the em it moves the pin to. A repo
+   that carries both a mise pin and a `.em-version` has both moved by the same run.
 4. **`reaction-shape`** — delegates to `em migrate`'s own plan/verify/apply: rewrites the old
    pre-1.7.1 two-slice Automation/Translation shape into the merged single-slice shape.
 5. **`state-file`** — when the state file is **absent**, scaffolds one (MIL-257; the same

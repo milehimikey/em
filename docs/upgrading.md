@@ -53,7 +53,7 @@ cherry-pick each one individually:
    After this step a 1.18.x build rejects the re-stamped docs, so move every em pin together.
    Since 1.23.0 four more steps (see [1.23.0](#1230)): `plugin-pin` and `mise-pin` run right after
    `skill-bundle` and move the plugin pin in `.claude/settings.json` and the `mise.toml` em pin to the
-   installed em; `ratified-sections` and the opt-in `ratified-hash-baseline`
+   installed em (since 1.24.0 `em-version-pin` follows them and moves a `.em-version` file the same way); `ratified-sections` and the opt-in `ratified-hash-baseline`
    (`--baseline-ratified-hash`) run after this step, then `policy-file`.
 9. `collapse-alternative-events`, `fold-continuations` (opt-in), `view-doc-sources-stale`, `slice-index-stale`,
    `parking-lot-fragments` — five 1.18.0 steps (see [1.18.0](#1180)); they run just before
@@ -673,6 +673,13 @@ The 1.19.1 step: `ci-block` (regenerates the `glossary` job with `--waive-file`)
 ### Upgrading to 1.20.0
 
 Update the `@milehimikey/em` dependency (and the plugin pin to `em-1-20-0` / `v1.20.0` on plugin repos, and the mise pin), all together. `em upgrade <model>.em` has no 1.20.0 step and only bumps the `Em version:` line. Re-run `em validate`: `doc-names-unfed-event` warnings backed by a `loops-to` disappear, and the new advisory `view-lookup-source` may surface lookup-shaped view sources — apply the generation rule or waive per [validation.md](validation.md#shape). Everything else is opt-in: the path source form, `--doc-json`, `conform --preview`, inline ratification, `refs --check-order` and the viewer's storyline filter.
+
+## 1.24.0
+
+| What changed for a model repo | Handled by `em upgrade`? |
+|---|---|
+| **`.em-version`: a per-project pin em reads itself** (GH #223, [ai-workflow.md](ai-workflow.md#pinning-the-cli-to-the-same-version)): a one-line `.em-version` file next to the model, or anywhere above the directory `em` is run from, pins the CLI. An `em` of another version re-runs the command as `npx -y @milehimikey/em@<pinned>` with the same arguments and exit code, so it holds on any machine with `em` and `npx`, with or without mise. `em upgrade` is never re-run that way. `EM_SKIP_VERSION_PIN=1` turns it off. A repo without the file is unchanged. Adopting it is optional, and a repo may carry it beside a mise pin | `em-version-pin` (since 1.24.0) rewrites the version in an existing `.em-version` inside the repo, in its own commit, right after `mise-pin`. It never creates the file |
+| **`em skill check` reads the `.em-version` pin** ([cli.md](cli.md#em-skill-check-path)): new finding `em-version-pin-mismatch` when the file disagrees with the plugin pin (or, with no plugin, the installed em), exit 1. The mise pin is held to the same version, so two pin files that disagree cannot both pass. `skillCheckSchemaVersion` 1.2 → **1.3** (additive: `emVersionPin`, `emVersionFile` on every finding, `null` unless that code) | no action needed. Fix a reported mismatch by running `em upgrade <model>.em --apply` |
 
 ## 1.23.1
 

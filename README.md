@@ -21,17 +21,31 @@ Requires Node ≥ 18. SVG, PNG, and PDF rendering are all fully self-contained (
 as bundled WebAssembly); nothing else to install. Only rarer formats (ps, eps, ...) need an
 optional system dependency — see [docs/dependencies.md](docs/dependencies.md).
 
-**Working in a team, or across several repos?** Pin `em` per project instead, so every
-contributor, agent and CI job runs the same version — with [mise](https://mise.jdx.dev) it's one
-line and needs no `package.json`:
+### Pinning a version per project
+
+A global install means every contributor (and every agent) runs whatever version happens to be
+installed on their machine, which drifts over time. To pin an exact version for one project, drop a
+`.em-version` file next to the model (or anywhere above it). It needs no `package.json` and no other
+tool, so it works in any repo, whatever its language and whatever is installed on the machine:
 
 ```bash
-mise use npm:@milehimikey/em@1.14.1   # writes the pin to mise.toml; bare `em` now resolves to it
+echo "1.24.0" > .em-version
 ```
 
-Pair it with the Claude Code plugin pin (below) and the CLI, the skills and the MCP server are all
-on one version. See [docs/ai-workflow.md](docs/ai-workflow.md#pinning-the-cli-to-the-same-version)
-for the full motion, including the `npx` route for repos without mise.
+From then on, running the installed `em` re-runs the pinned version through `npx` whenever it
+differs from what's installed: same command, same output, nothing else to remember. This is the
+pattern Node's Corepack uses for the `packageManager` field. A repo without `.em-version` sees no
+change in behavior. `em upgrade` always runs as the installed `em` and moves the pin for you. Set
+`EM_SKIP_VERSION_PIN=1` to bypass pinning outright (for example while developing em itself from a
+local checkout).
+
+**Already on [mise](https://mise.jdx.dev)?** `mise use npm:@milehimikey/em@1.24.0` pins `em` in
+`mise.toml` instead, and bare `em` resolves to it wherever mise is active. A repo may carry either
+pin or both. `em skill check` holds both to the same version, and `em upgrade` moves both.
+
+Pair the pin with the Claude Code plugin pin (below) and the CLI, the skills and the MCP server are
+all on one version. See [docs/ai-workflow.md](docs/ai-workflow.md#pinning-the-cli-to-the-same-version)
+for the full motion.
 
 ## Quickstart
 
