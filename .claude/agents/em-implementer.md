@@ -25,7 +25,7 @@ Your prompt may name a **work unit** instead of a slice: an id of the form `<sli
 ## Scope
 
 - Exactly one slice: the key you were given. Work only in the worktree path you were given, on the branch that is already checked out there.
-- Write code and tests inside that slice's package, as the constitution's layout rule describes it.
+- Write code and tests inside that slice's package, as the constitution's layout rule describes it. For a work unit the boundary is the **unit's place**: the repository and roots its brief names, and inside them the slice's package under the same layout rule.
 - Every invariant and scenario in the slice doc gets a test that cites its `INV-*` id.
 
 ## Bindings file
@@ -54,6 +54,7 @@ Your prompt carries the exact pull-request title (the plan's `prTitle`, resolved
 ## Hard lines
 
 - Never edit the slice doc, the `.em` model, another slice's package, shared infrastructure, or the engagement file.
+- For a work unit: never edit anything outside the unit's place. That rules out every other repository (a sibling unit's code included, even to make the two halves fit), and every path in your own repository outside the roots the brief names. If your half cannot work without a change on the other side, stop and report it as a gap.
 - Never merge. Never rebase onto anything. Never change the branch's base.
 - If the slice doc is wrong, incomplete, or contradicts the constitution, stop and report the gap. Do not decide it silently and do not edit the doc to fit your code.
 - Do not dispatch other agents.
