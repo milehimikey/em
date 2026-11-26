@@ -676,6 +676,12 @@ Update the `@milehimikey/em` dependency (and the plugin pin to `em-1-20-0` / `v1
 
 ## 1.24.0
 
+Theme: **multi-repository support.** A model's code can live in other repositories than the
+model, and in more than one. Start with [multi-repo.md](multi-repo.md). A project whose model and
+code share one repository has nothing to do: every change below is additive, and with no
+`code-map.yaml` and no `repos:` the plan, brief, Ledger and export are what they were, apart from
+schema version strings.
+
 | What changed for a model repo | Handled by `em upgrade`? |
 |---|---|
 | **One em pin, in the model's repository** (GH #546, [ci.md](ci.md#a-code-repository-run-em-at-the-models-pin)): a command that names a model file now runs at the version the **model's** repository pins (the nearest `.em-version` at or above the model, inside its repository), from any working directory, in preference to a `.em-version` above the working directory. So a code repository's job that checks the model's repository out and runs `npx @milehimikey/em … <model>.em` needs no version of its own. `em repos check` names the pin in force and reports each code repository that fixes one itself (`.em-version`, `package.json`, a workflow); `--exit-code` fails on any | no action needed for a repository that holds its own model: the pin beside or above the model is the one found either way. **If a code repository has an em version of its own, remove it.** **Behaviour change:** with two `.em-version` files in one tree, a command naming a model now follows the one nearest the model, not the one nearest the working directory |

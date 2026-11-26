@@ -26,6 +26,7 @@ agent can carry with human review.
 | Look up the slice-doc frontmatter schema (version, lineage, required-vs-optional keys) | [slice-doc-schema.md](slice-doc-schema.md) |
 | Look up the per-slice bindings manifest schema (`conformance/bindings/<slice-key>.yaml`) | [bindings.md](bindings.md) |
 | Extend a generated contract (routes, envelopes, channel bindings) without forking it | [contract-bindings.md](contract-bindings.md) |
+| Put a model's code in other repositories than the model: the layouts, which to pick, what to set up | [multi-repo.md](multi-repo.md) |
 | Say which repository and root each part of a model's code lives in (`code-map.yaml`) | [code-map-schema.md](code-map-schema.md) |
 | Drive `em` from your own orchestrator: what `em` publishes, what stays yours, the join key | [harness.md](harness.md) |
 | Declare process policy once (merge strategy, prose sections, roster) in `em-policy.yaml` | [policy.md](policy.md) |

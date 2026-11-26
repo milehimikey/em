@@ -7,7 +7,7 @@ whatever drives the work: what `em` publishes, what stays yours, and how the pie
 are found again across repositories.
 
 It matters most when a model's code is in more than one repository
-([multi-repository models](code-map-schema.md)), because then one slice is several pull requests
+([multi-repo.md](multi-repo.md)), because then one slice is several pull requests
 in several places and something has to keep track of the set.
 
 ## What em publishes

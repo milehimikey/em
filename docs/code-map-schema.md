@@ -4,6 +4,8 @@ A code map is `<model dir>/code-map.yaml`, beside the model (GH #527, since 1.24
 where the model's code lives when that is not simply "in this repository, under the state file's
 code roots": in another repository, in several, or under different roots of one.
 
+For the layouts this serves and how to choose between them, see [multi-repo.md](multi-repo.md).
+
 **A project whose model and code share one repository does not need this file.** With no
 `code-map.yaml`, nothing in `em` changes: the state file's `Code roots:` bullet keeps saying where
 the code is, exactly as before, and `em system scope` reads it for `code-spans-seam` as it always
