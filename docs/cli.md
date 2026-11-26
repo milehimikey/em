@@ -2725,9 +2725,10 @@ committed at that revision. `Em-Upgrade:` commits never count. The text report p
 
 ## `em engagement`
 
-An engagement is a named chunk of the model that one lead session builds as a stack of slice PRs
-(MIL-268). It is the scope boundary: stacks never cross an engagement, and inside one only
-dependency edges stack. `em engagement` keeps two things beside the model, in
+An engagement is a named chunk of the model that one lead session builds as a set of slice PRs,
+each against `main` (MIL-268). It is the scope boundary. Slice PRs never stack (since 1.15.0,
+MIL-280): a dependency edge inside an engagement sets the level a slice builds at, not its base.
+`em engagement` keeps two things beside the model, in
 `<model dir>/engagements/<slug>.md` ([engagement-schema.md](engagement-schema.md)): the
 selection (which slices, and how many may be in flight per level), and the **Ledger** (where
 each slice stands). The file is written only by these commands. Never hand-edit it.

@@ -108,7 +108,9 @@ once tested:
   new aggregation primitive.
 - **Which model's public events feed another model's slices** — this is the part the ticket
   flagged as an open question, and where the prototype found a real gap: **em has no DSL-level
-  cross-model reference.** `from` only resolves within the model currently being compiled — an
+  cross-model reference.** (True when this was written. Since em 1.14.0 there is one: a
+  translation's `consumes <model>:<kind>.<slug>` clause, verified by `em system`. See
+  [dsl.md](../dsl.md) and [MIL-194](mil-194-seam-manifest.md).) `from` only resolves within the model currently being compiled — an
   early draft of the prototype's fixture wrote a genuine `view … from "<another model's event>"`
   and `em validate` correctly rejected it (`view-from-unresolved`). The `public` clause (docs/
   dsl.md "Integration surface") is a **promotion flag**, not a link: it marks an event as part of
@@ -204,7 +206,8 @@ Every rough acceptance criterion on the ticket is addressed:
   reasoned through above.
 - [x] **Design an onboarding/teaching layer** — [above](#1-a-guided-first-read), prototyped.
 - [x] **Design cross-model navigation** — [above](#3-multi-model-navigation), including the
-  real gap found (no DSL-level cross-model reference) and the heuristic that stands in for it.
+  real gap found (no DSL-level cross-model reference, closed since by `consumes` in em 1.14.0)
+  and the heuristic that stood in for it.
 - [x] **Prototype against a large (hundreds-of-slices, multi-model) test set** —
   `prototypes/portal-spike/`, tested up to 1,219 slices / 20 models; regression-guarded in
   `test/portalSpike.test.ts`.
