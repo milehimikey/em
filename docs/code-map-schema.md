@@ -21,7 +21,7 @@ context); the code map says *where*.
 |---|---|---|
 | `system.yaml` → `repos:` ([cli.md](cli.md#the-manifest-schema-20), manifest schema 2.1) | yes | Which repositories exist: a logical **repo id** and its remote |
 | `code-map.yaml` (this page) | yes | Which repo id, and which root inside it, each part of one model lives in |
-| a per-machine mapping | no | Where each repo id is checked out on this machine |
+| `.em/repos.local.yaml` ([cli.md](cli.md#emreposlocalyaml)) | no | Where each repo id is checked out on this machine. Optional: `--repo <id>=<path>` and a sibling directory named after the id also resolve one |
 
 The repository list is not allowed here: a top-level `repos:` in a code map is an error. A model
 that places anything outside its own repository therefore needs a `system.yaml`, even when it is
@@ -109,6 +109,9 @@ A model command is run on a `.em` file, not on a manifest. The repo ids a code m
 from the nearest `system.yaml` at or above the model's directory, looking no higher than the root
 of the git repository the model is in. A `system.yaml` outside that repository does not govern
 the model.
+
+`em repos check` ([cli.md](cli.md#em-repos-check-target)) reports each declared repo id as
+resolved, missing or not a git repo on this machine.
 
 ## Validation
 

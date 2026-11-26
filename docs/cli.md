@@ -19,6 +19,7 @@
 | `em status <files...>` | Deterministic state-of-the-system rollup over one or more models: lifecycle status, driftSignal, invariant coverage, open issues, and conformance |
 | `em freshness <file>` | Standalone "last conformed `<rev>` — N commits/M slice-PRs behind HEAD" for one model |
 | `em metrics <file> --from <rev>` | The pilot metrics from git history: ratification turnaround, conform cadence + findings, status-vs-reality disagreement (a fourth is not computable) |
+| `em repos check [<target>]` | Report every repo id of a system (`self` plus `system.yaml`'s `repos:`) as resolved, missing or not a git repo on this machine |
 | `em system [<manifest>\|<dir>]` | Resolve every translation's `consumes` ref against the other models' `public` events/views. The models come from `system.yaml` or, with no manifest, from every `*.em` the repo tracks. Also emits the org-level context map |
 | `em glossary <files...>` | Cross-model glossary of terms, with consistency checks across models |
 | `em catalog <files...>` | Generate a browsable static HTML catalog site over one or more models |
@@ -5100,6 +5101,117 @@ em model version show model.em --json
 `certified` names the most recently CERTIFIED design version — which need not equal `design`
 itself, since a later bump can outrun certification (the example above: v2 was bumped, but only
 v1 was ever certified). `null` for either field means "never bumped"/"never certified".
+
+## `em repos check [target]`
+
+Since 1.24.0 (GH #528). Reports, for this machine, where each repository of a system is checked
+out: `self` (the repository the model lives in) and every repo id under `repos:` in the
+[`system.yaml`](#the-manifest-schema-20) that governs `target`. It is the doctor for a system
+whose code is in more than one repository. **`em` never clones, pulls or pushes**: a repo that is
+not there is reported, never fetched.
+
+`target` is a `.em` file, a directory, or a `system.yaml`; the default is the working directory.
+For a model file or a directory the manifest is the nearest `system.yaml` at or above it, inside
+the same git repository ([code-map-schema.md](code-map-schema.md#finding-the-manifest)). With no
+manifest, only `self` exists.
+
+```
+$ em repos check models/checkout/checkout.em
+manifest: /work/storefront-model/system.yaml
+  self            resolved  /work/storefront-model  (the model's own repository)
+  storefront-web  resolved  /work/storefront-web  (sibling directory)
+  checkout-svc    resolved  /src/checkout  (.em/repos.local.yaml)
+  payments-svc    missing   /work/payments-svc  (sibling directory)
+                  no directory there — map it with --repo payments-svc=<path> or in .em/repos.local.yaml; em does not clone
+3 of 4 repos resolved, 1 not
+```
+
+### How a repo id resolves
+
+For each id, the first source that names a path wins:
+
+1. **`--repo <id>=<path>`**, repeatable. The path is relative to the working directory. A bare
+   `--repo <path>` is accepted when the manifest declares exactly one repo, and names it.
+2. **`.em/repos.local.yaml`**, at the root of the model's repository: the per-machine mapping
+   (below).
+3. **A sibling directory named after the id**, next to the model's repository:
+   `<model repo>/../<id>`. This is what several `actions/checkout` steps or a plain "clone
+   everything side by side" give you, with no configuration.
+
+`self` is always the root of the git work tree the model is in, and cannot be mapped.
+
+| Status | Meaning |
+|---|---|
+| `resolved` | The path is a directory with a `.git` entry: the root of a checkout (a linked work tree counts) |
+| `missing` | No directory at the path the winning source named, or no source named one |
+| `not a git repo` | The directory exists but is not the root of a checkout |
+
+A resolved repo's `origin` URL is compared with the `remote` the manifest records, ignoring the
+protocol, a user, and a `.git` suffix. A difference is a warning (`remoteMatches: false`): the id
+is probably mapped to the wrong checkout. It reads the checkout's own git config and never
+contacts the remote.
+
+### `.em/repos.local.yaml`
+
+Where a repository is checked out is a fact about one machine, so it is not committed. Write it
+by hand; nothing in `em` writes it:
+
+```yaml
+reposLocalSchemaVersion: "1.0"   # optional
+repos:
+  checkout-svc: /src/checkout
+  payments-svc: ../services/payments     # relative to the model repository's root
+  storefront-web: ~/work/storefront-web
+```
+
+- The file lives at `<model repository root>/.em/repos.local.yaml`.
+- `repos:` maps a repo id to a path: absolute, relative to the model repository's root, or
+  starting with `~/`. `self` is not mapped.
+- Unknown keys are errors. A malformed file is reported and not used; the sibling fallback still
+  applies.
+- **Gitignore it.** Add `.em/*.local.yaml` to the model repository's `.gitignore`. `em repos
+  check` warns when the file exists and git does not ignore it.
+
+| Flag | Effect |
+|---|---|
+| `--repo <id=path>` | Map a repo id to a checkout for this run (repeatable). An id the manifest does not declare is an error |
+| `--json` | Print a JSON document instead of the text report |
+| `--exit-code` | Exit 1 if any repo did not resolve, or the manifest or per-machine file could not be used. Without it the command is advisory and exits 0 |
+
+Bad arguments (an unreadable target, an undeclared id, an ambiguous bare path) exit 1 either way.
+
+**`--json` shape** (`reposCheckSchemaVersion: "1.0"`). It carries absolute paths, because where
+things are on this machine is its whole subject. It is a local report, not a document to commit.
+
+```json
+{
+  "reposCheckSchemaVersion": "1.0",
+  "generator": { "name": "@milehimikey/em", "version": "1.24.0" },
+  "ok": false,
+  "manifest": "/work/storefront-model/system.yaml",
+  "manifestProblem": null,
+  "modelRepoRoot": "/work/storefront-model",
+  "localFile": "/work/storefront-model/.em/repos.local.yaml",
+  "localFileProblems": [],
+  "localFileIgnored": true,
+  "repos": [
+    { "id": "self", "remote": null, "status": "resolved", "path": "/work/storefront-model", "source": "self", "remoteMatches": null, "actualRemote": null },
+    { "id": "payments-svc", "remote": "git@github.com:acme/payments-svc.git", "status": "missing", "path": "/work/payments-svc", "source": "sibling", "remoteMatches": null, "actualRemote": null }
+  ],
+  "summary": { "total": 2, "resolved": 1, "missing": 1, "notAGitRepo": 0 }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `ok` | Every repo resolved, and the manifest and per-machine file were usable. A differing remote or an un-ignored per-machine file does not make it `false` |
+| `manifest` / `manifestProblem` | The governing manifest (`null` when none), and why its `repos:` could not be read when it could not |
+| `localFile` / `localFileProblems` / `localFileIgnored` | The per-machine file when it exists; why it was not used; whether git ignores it (`null` when there is no file or git could not say) |
+| `repos[].status` | `"resolved"`, `"missing"` or `"not-a-git-repo"` |
+| `repos[].source` | `"self"`, `"flag"`, `"local-file"` or `"sibling"`: which source named `path`. `null` with a `null` path when the model is not in a git repository, so there is nowhere to look |
+| `repos[].remoteMatches` / `actualRemote` | See above; `actualRemote` is set only when they differ |
+
+There is no MCP tool for this command: it reports one machine's checkout paths.
 
 ## `em discover triage-check <file>`
 
