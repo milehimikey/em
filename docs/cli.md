@@ -2329,13 +2329,16 @@ line's conformance clause reports the *first* file's entry (a single-model invoc
 common case it's written for); the full per-model breakdown is always in the detail block below
 it, and in `--json`, regardless of file count.
 
-**Slice-PRs behind HEAD** (MIL-164) is the count of slices whose bound doc's `implementedIn:`
-names a path the target repo has changed since `Last conformance:`'s revision — the same
-candidate-slice computation `em conform-scope` makes for one model at a time (its own
-`implementedIn`-prefix match against `git diff --name-only <revision>..HEAD`), rolled up here to
-a single number: "how many slices likely shipped code since the last conform sweep, and so are
-due a fresh evidence walk." A slice whose `implementedIn` is a URL (a PR/commit link, no path
-information) never counts, same as `em conform-scope`'s own rule. Like `commitsBehindHead`, it's
+**Slice-PRs behind HEAD** (MIL-164) is the count of slices whose bindings manifest or bound doc's
+`implementedIn:` names a path the target repo has changed since `Last conformance:`'s revision —
+the same candidate-slice computation `em conform-scope` makes for one model at a time (its
+bindings-file match and `implementedIn`-prefix match against
+`git diff --name-only <revision>..HEAD`), rolled up here to a single number: "how many slices
+likely shipped code since the last conform sweep, and so are due a fresh evidence walk." A slice
+whose `implementedIn` is a URL (a PR/commit link, no path information) counts only through its
+bindings manifest, same as `em conform-scope`'s own rule (GH #523: before 1.24.0 such a slice never
+counted, so the number was always 0 for a project whose slices were flipped by
+`em slice mark-implemented`). Like `commitsBehindHead`, it's
 `null` exactly when the conformance record couldn't be verified at all (see `error` below) — a
 `null` here is never the same fact as "0 slice-PRs behind," so it's never coalesced to 0.
 
@@ -5492,8 +5495,8 @@ em usage-report . --json   # { "usageReportSchemaVersion": "1.0", "sessions": 7,
 Mechanizes the mechanical half of
 [reference/conform.md](../.claude/skills/event-modeling-conform/reference/conform.md)'s conform-phase
 step 1 ("Scope") — reading the `Last conformance:` marker, running `git diff --name-only` in
-the target repo, and mapping the changed paths to slices via each slice doc's `implementedIn` —
-so the agent no longer does this by hand. Prints one JSON document to stdout:
+the target repo, and mapping the changed paths to slices via each slice's bindings manifest and
+its doc's `implementedIn` — so the agent no longer does this by hand. Prints one JSON document to stdout:
 
 ```json
 {
@@ -5510,7 +5513,7 @@ so the agent no longer does this by hand. Prints one JSON document to stdout:
 |---|---|
 | `lastConformance` | The state file's `Last conformance:` marker, parsed via `em state read`'s same `stateFile.ts` (`{ "date", "revision" }`), or `null` for the `never` marker (first run). Always echoed back as parsed, even under `--full`. |
 | `changedPaths` | `git diff --name-only <lastConformance.revision>..HEAD` in `--repo`, repo-root-relative. `[]` when scoping in full mode (see below) — not omitted, so the JSON shape stays stable across modes. |
-| `candidateSlices` | Slices the tool placed deterministically. `matchedBy: "implementedIn"` (diff-scoped mode) carries the subset of `changedPaths` that slice's doc `implementedIn` names; `matchedBy: "full"` (full mode) carries an empty `paths` — every `status: implemented` slice is in scope, not a specific changed path. `file` (GH #451) is the storyline model file this slice's body lives in — posix, relative to the model's directory — or `null` for a slice declared in the root file; tells the agent which `--seed-asis` scratch file to edit for this slice (`<model>-asis.em` when `null`, else that file's own `-asis` sibling) without a second lookup against the model. |
+| `candidateSlices` | Slices the tool placed deterministically. `matchedBy: "implementedIn"` (diff-scoped mode) carries the subset of `changedPaths` that slice's doc `implementedIn` names, plus any its bindings manifest names; `matchedBy: "bindings"` (diff-scoped mode, since 1.24.0, GH #523) means only the bindings manifest placed them; `matchedBy: "full"` (full mode) carries an empty `paths` — every `status: implemented` slice is in scope, not a specific changed path. `file` (GH #451) is the storyline model file this slice's body lives in — posix, relative to the model's directory — or `null` for a slice declared in the root file; tells the agent which `--seed-asis` scratch file to edit for this slice (`<model>-asis.em` when `null`, else that file's own `-asis` sibling) without a second lookup against the model. |
 | `unmappedPaths` | `changedPaths` matched by no slice — hand to agent judgment (grep fallback, evidence walks per `reference/conform.md`). Always `[]` in full mode. |
 
 **Scoping mode.** Diff-scoped by default: when `lastConformance` is set and `--full` isn't
@@ -5526,6 +5529,16 @@ leading `./`/trailing `/`, it's textually equal to that path or a directory pref
 remote (`https://…`, `git@host:…` — the common PR/commit-link shape) carries no repo-relative
 path information, so it deterministically matches nothing. There's no grep fallback here on
 purpose — that judgment call belongs to the agent, one level up (`reference/conform.md` step 1).
+
+**The bindings rule** (since 1.24.0, GH #523). `em slice mark-implemented` writes a PR URL into
+`implementedIn`, so on the documented flow the rule above places nothing. A changed path is
+therefore also placed in a slice when that slice's bindings manifest
+([`conformance/bindings/<slice-key>.yaml`](bindings.md)) names exactly that file, in `elements[].file`
+or an invariant's `enforcedIn.file`/`testedIn.file`. The match is on the whole repo-relative path,
+never a prefix. A slice with no manifest, or a malformed one, contributes nothing here
+(`em conform bindings check` is what reports a malformed file). A slice with neither a path in
+`implementedIn` nor a manifest is still never a diff-scoped candidate; its changed files come back
+in `unmappedPaths`.
 
 | Flag | Effect |
 |---|---|

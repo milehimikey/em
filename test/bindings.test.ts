@@ -12,6 +12,7 @@ import { compile } from "../src/pipeline.js";
 import { rmTemp } from "./helpers/rmTemp.js";
 import {
   bindingsFilePath,
+  boundFilesForSlice,
   buildBindingsCheckJson,
   listBindingsSliceKeys,
   parseBindingsFile,
@@ -362,5 +363,27 @@ describe("renderBindingsCheckText", () => {
     const text = renderBindingsCheckText(result);
     expect(text).toMatch(/summary: 1 file\(s\) checked, 0 failed; 0 element binding\(s\), 0 failed; 0 invariant binding\(s\), 0 failed/);
     rmTemp(modelDir);
+  });
+});
+
+describe("boundFilesForSlice (GH #523)", () => {
+  it("lists each bound file once, elements then invariant sites, with a leading ./ dropped", () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-bound-files-"));
+    try {
+      mkdirSync(join(dir, "conformance", "bindings"), { recursive: true });
+      writeFileSync(
+        join(dir, bindingsFilePath("place-order")),
+        `bindingsSchemaVersion: "1.0"\nslice: place-order\nelements:\n` +
+          `  - {ref: command.place-order, file: ./src/handler.ts, identifier: placeOrder}\n` +
+          `  - {ref: event.order-placed, file: src/handler.ts, identifier: OrderPlaced}\n` +
+          `invariants:\n  - id: INV-PO-1\n    enforcedIn: {file: src/rules.ts, identifier: check}\n    testedIn: {file: test/rules.test.ts, identifier: check}\n`,
+      );
+      writeFileSync(join(dir, bindingsFilePath("broken")), "slice: [not, a, mapping\n");
+      expect(boundFilesForSlice(dir, "place-order")).toEqual(["src/handler.ts", "src/rules.ts", "test/rules.test.ts"]);
+      expect(boundFilesForSlice(dir, "broken")).toEqual([]);
+      expect(boundFilesForSlice(dir, "no-such-slice")).toEqual([]);
+    } finally {
+      rmTemp(dir);
+    }
   });
 });
