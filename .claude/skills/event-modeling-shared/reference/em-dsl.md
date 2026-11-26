@@ -339,7 +339,7 @@ deps; only rarer formats (ps, eps, ...) need `rsvg-convert`.
 ## Grammar
 
 ```
-model "Name" [owner "Team"]      # diagram title; optional owning team(s), quoted free text
+model "Name" [owner "@org/team"] # diagram title; optional owning team(s), as CODEOWNERS handles
 
 persona Name                     # a UI swimlane row (actor)
 context Name                     # an event swimlane row (bounded context / aggregate)
@@ -487,8 +487,11 @@ enum Name { member, ... }           # closed named value set, reusable from any 
   derives `dangling-public-event` / `unbound-translation` from it. Two `public` elements of one
   kind sharing a slug are a `public-name-not-unique` error, because a ref couldn't tell them
   apart. Exported as `consumes: string[] | null`.
-- **`owner`** (model header, MIL-235): `model "Checkout" owner "Storefront team"[, "…"]`. Quoted
-  free text, kept as written, exported as `model.owner: string[]`. It replaces a 1.0
+- **`owner`** (model header, MIL-235): `model "Checkout" owner "@shop/storefront"[, "…"]`. Each
+  owner is a CODEOWNERS handle: a GitHub user (`@alice`), a team (`@org/team`) or an email
+  address. Any other quoted text (`"Storefront team"`, which the 1.0-manifest migration writes
+  as-is) still parses and is kept as written, but `em validate` warns `owner-not-a-handle` and
+  `em system codeowners` skips it. Exported as `model.owner: string[]`. It replaces a 1.0
   `system.yaml`'s per-model `owner:`.
 - **`tag`** (events only): declares a DCB (Dynamic Consistency Boundary) tag key. Three forms:
   a trailing `tag` on a field line inside the event's `{ … }` block (`priceId: UUID tag`, or
