@@ -3088,8 +3088,6 @@ stops; `incomplete` is one question to the human, with the gaps named, not one p
 
 ### `em engagement brief <file> <slug> [--slice <key>] [--inline-context] [--json]`
 
-<!-- `--unit <repo>` (GH #538) is documented below; the heading keeps its text so existing links hold. -->
-
 GH #454: a **deterministic, self-contained per-slice work brief** for implementers em does not
 control — a ticket-driven cloud agent fed by Jira/Linear tickets that has never run `em` and may
 not even have the repo checked out at context-assembly time. `em implement` hands an em-aware
