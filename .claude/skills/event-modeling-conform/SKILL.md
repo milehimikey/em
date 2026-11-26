@@ -25,6 +25,13 @@ the `event-modeling-discover` skill's `extract` sourcing/mode rules
 (`../event-modeling-discover/reference/extract.md`) for reading the target codebase rather than
 duplicating them.
 
+**Where the code is.** A model with a `code-map.yaml` has its code in places, possibly in several
+repositories; check with `em query slices <model-name>.em --json` (`places` on the results) and
+`em repos check <model-name>.em`. Then walk each place of each in-scope slice, never pass a bare
+`--repo`, write `repo:` on bindings, and record one revision per repository as a single
+`<repo>=<rev>,…` token — the reference's "Code in several repositories" section has the rules.
+Assume the model's own repository only when the model has no code map.
+
 In short: run `em conform-scope <model-name>.em --repo <target-repo-path> --seed-asis` to
 compute the in-scope slice set (diff-scoped by default, via `Last conformance:` + the target
 repo's changed paths mapped through each slice's bindings manifest and its doc's `implementedIn:`) and seed the scratch
