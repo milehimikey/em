@@ -1,7 +1,8 @@
 # Engagement file schema (`engagementSchemaVersion` 1.3; 1.2 is written with no `context`, 1.1 with neither `context` nor `prTitle`)
 
 An engagement file is `<model dir>/engagements/<slug>.md`, beside the model (MIL-268). It holds
-one engagement: the slices a lead session builds as one stack of PRs, and the **Ledger** that
+one engagement: the slices a lead session builds, one PR per slice against `main`, and the
+**Ledger** that
 records where each slice stands. Commands: [`em engagement`](cli.md#em-engagement).
 
 **Never hand-edit an engagement file.** `em engagement new` writes it. After that,
@@ -27,7 +28,7 @@ parallel: 3
 status: open
 slices:
   - {key: overdue-loans-to-notify, state: merged, branch: "impl/overdue-loans-to-notify", base: "main", pr: "https://github.com/acme/lending/pull/12"}
-  - {key: send-overdue-notice, state: review, branch: "impl/send-overdue-notice", base: "impl/overdue-loans-to-notify", pr: "https://github.com/acme/lending/pull/13"}
+  - {key: send-overdue-notice, state: review, branch: "impl/send-overdue-notice", base: "main", pr: "https://github.com/acme/lending/pull/13"}
   - {key: tool-ratings, state: held, branch: null, base: null, pr: null, heldBy: human}
 ---
 # Engagement: loans
@@ -41,7 +42,7 @@ never hand-edit the frontmatter `slices:` entries or the Ledger table (see docs/
 | Slice | Pattern | Doc status | State | Branch | Base | PR |
 |---|---|---|---|---|---|---|
 | `overdue-loans-to-notify` | state-view | implemented | merged | impl/overdue-loans-to-notify | main | https://github.com/acme/lending/pull/12 |
-| `send-overdue-notice` | translation | ready-to-implement | review | impl/send-overdue-notice | impl/overdue-loans-to-notify | https://github.com/acme/lending/pull/13 |
+| `send-overdue-notice` | translation | ready-to-implement | review | impl/send-overdue-notice | main | https://github.com/acme/lending/pull/13 |
 | `tool-ratings` | state-view | draft | held (human) | — | — | — |
 <!-- GENERATED:em-engagement-ledger:end -->
 ```
