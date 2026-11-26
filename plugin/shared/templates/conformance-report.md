@@ -10,6 +10,9 @@ Replace bracketed placeholders; delete guidance comments before finishing.
 
 - **Model:** `{{model-name}}.em`
 - **Target repo:** {{repo path or URL}} @ `{{revision}}`
+  <!-- Code in several repositories: name them, and write one revision per repo as a single
+       token in repo-id order — `checkout-svc, storefront-web @ `checkout-svc=4f2a9c1,storefront-web=b81d0e7``.
+       Use that same token for `em state set-conformance`, `em slice conform --at` and the findings file. -->
 - **Previous conformance revision:** {{prior target-repo revision, or "never (first run)"}}
 - **Scope:** {{full | diff-scoped since <prior revision>}}
 - **Slices checked:** {{comma-separated slice names, or "all implemented slices"}}

@@ -40,6 +40,7 @@
 //    would be exactly the sequencing bug MIL-214 exists to close). `--skip-findings-check`
 //    escapes with a loud notice, never silently.
 
+import { checkRevisionArg } from "./repoRevisions.js";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
@@ -75,6 +76,11 @@ export function validateAtRevision(at: string): { ok: true; value: string } | { 
   // GH #261: a `<kind>:<id>` value is an opaque, non-git identifier (what the sweep exercised —
   // a build, deployment or environment) recorded verbatim; `:` anywhere else is malformed, so a
   // reader never has to guess whether a value is a revision. See `parseConformedAt`.
+  // GH #534: `<repo>=<rev>,…` is one revision per repository; it must be well formed and in
+  // canonical order (repoRevisions.ts). A plain revision is untouched.
+  const perRepo = checkRevisionArg(trimmedAt, "--at");
+  if (!perRepo.ok) return perRepo;
+  if (trimmedAt.includes("=")) return { ok: true, value: trimmedAt };
   if (trimmedAt.includes(":") && !/^[a-z][a-z0-9-]*:.+$/.test(trimmedAt)) {
     return {
       ok: false,
