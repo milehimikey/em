@@ -40,6 +40,7 @@
 // state` (src/cli.ts) and any future caller share the same file-location convention instead of
 // re-deriving it.
 
+import { parseRevision, RepoRevision } from "./repoRevisions.js";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
@@ -84,9 +85,12 @@ export interface ParsedState {
   phase: string;
   step: string;
   lastUpdated: string;
-  lastConformance: { date: string; revision: string; report: string; partial: boolean } | null;
+  /** `revisions` (GH #534) is present only when `revision` is a per-repo value
+   *  (`<repo>=<rev>,…`, repoRevisions.ts): the same facts, taken apart. Absent for a single
+   *  revision, so `em state read` prints what it always printed. */
+  lastConformance: { date: string; revision: string; report: string; partial: boolean; revisions?: RepoRevision[] } | null;
   modelVersion: number | null;
-  certified: { version: number; revision: string; date: string } | null;
+  certified: { version: number; revision: string; date: string; revisions?: RepoRevision[] } | null;
   /** MIL-219: the `Em version:` bullet's value, or `null` for the `unknown` sentinel (including
    *  when the bullet is missing entirely from a state file predating this feature — same
    *  migration-tolerant treatment `modelVersion`/`certified` get). Never validated as a real
@@ -141,6 +145,12 @@ export function loadStateFile(dirOrFile: string): LoadResult {
 const LAST_CONFORMANCE_RE = /^(\d{4}-\d{2}-\d{2}) @ (.+?) — report: (.+?)( \(partial\))?$/;
 const LEADING_DATE_RE = /^(\d{4}-\d{2}-\d{2})\b/;
 
+/** `{ revisions }` for a per-repo revision (GH #534), `{}` for a single one. */
+function perRepo(revision: string): { revisions?: RepoRevision[] } {
+  const parsed = parseRevision(revision);
+  return parsed.kind === "per-repo" ? { revisions: parsed.revisions } : {};
+}
+
 // MIL-218: `Model version:` holds a bare positive integer or the literal `none`.
 const MODEL_VERSION_RE = /^(\d+)$/;
 // MIL-218: `Certified:` holds `v<N> @ <revision> (YYYY-MM-DD)` or the literal `never` — same
@@ -186,7 +196,7 @@ export function parseState(text: string): ParseStateResult {
         message: `"- **Last conformance:**" doesn't match "YYYY-MM-DD @ <revision> — report: <path>" or "never": ${lastConformanceRaw}`,
       };
     }
-    lastConformance = { date: m[1], revision: m[2], report: m[3], partial: m[4] !== undefined };
+    lastConformance = { date: m[1], revision: m[2], report: m[3], partial: m[4] !== undefined, ...perRepo(m[2]) };
   }
 
   const lastReviewRaw = raw[LABELS.lastStakeholderReview];
@@ -225,7 +235,7 @@ export function parseState(text: string): ParseStateResult {
         message: `"- **Certified:**" doesn't match "v<N> @ <revision> (YYYY-MM-DD)" or "never": ${certifiedRaw}`,
       };
     }
-    certified = { version: Number(m[1]), revision: m[2], date: m[3] };
+    certified = { version: Number(m[1]), revision: m[2], date: m[3], ...perRepo(m[2]) };
   }
 
   const emVersionRaw = optionalRaw[OPTIONAL_LABELS.emVersion];

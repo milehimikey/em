@@ -5634,6 +5634,49 @@ em state set-conformance abc123f my-model/ --report conformance/2026-08-20-repor
 # -> wrote my-model/.event-modeling.md
 ```
 
+### One revision per repository
+
+Since 1.24.0 (GH #534). Wherever a conformance run records "the revision the code was checked
+at", the value has been one git revision of the one target repository. When a model's code is in
+more than one repository ([code-map-schema.md](code-map-schema.md)) it is one revision **per
+repository**, written in the same slot as a single token:
+
+```
+checkout-svc=4f2a9c1,storefront-web=b81d0e7
+```
+
+- `<repo id>=<revision>` pairs, comma-separated, **no spaces, in repo-id order**, each repo
+  once. The repo ids are those of `system.yaml`'s `repos:`, plus `self` for the model's own
+  repository.
+- It goes wherever a single revision goes: `em state set-conformance <revision>`,
+  `em slice conform --at`, `em conform-supersede --as-of`, a findings file's `revision`, and the
+  report's `Target repo: … @ \`<revision>\`` line.
+- The three commands refuse a value with `=` that is malformed or not in id order, and print the
+  canonical spelling. That is what keeps the findings gate working: it pairs a report with the
+  findings "at the same revision" by comparing the strings, so every file of one run must spell
+  the set the same way.
+- A plain revision is unchanged, and still means the model's one code repository. No existing
+  file needs rewriting.
+
+What records it:
+
+| Where | Form |
+|---|---|
+| State file `Last conformance:` | `YYYY-MM-DD @ checkout-svc=4f2a9c1,storefront-web=b81d0e7 — report: <path>` |
+| State file `Certified:` | `v<N> @ checkout-svc=4f2a9c1,storefront-web=b81d0e7 (YYYY-MM-DD)` |
+| Slice doc `conformedAt:` | `checkout-svc=4f2a9c1,storefront-web=b81d0e7` (`parseConformedAt()` reads it as kind `repos`) |
+| Conformance report | `- **Target repo:** checkout-svc, storefront-web @ \`checkout-svc=4f2a9c1,storefront-web=b81d0e7\`` |
+
+`em state read` adds `revisions: [{ repo, revision }]` beside `revision` on `lastConformance`
+and on `certified` when the value is per-repo; for a single revision the key is absent and the
+output is what it was.
+
+**`shippedRef:` and `ratifiedRef:` are not this.** They are commits of the **model's**
+repository: what the design looked like when it was signed and when it shipped. They stay a
+single commit however many repositories the code is in. `em refs --reachable-from` checks them
+there, along with a plain `conformedAt:` or the `self` entry of a per-repo one; the entries for
+other repositories are code revisions in those repositories.
+
 ### `em state set-review <date> [dir]`
 
 Rewrites `Last stakeholder review:` (and `Last updated:`) to `<date> — attendees: see

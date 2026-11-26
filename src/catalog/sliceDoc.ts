@@ -79,6 +79,7 @@
 // writer in cli/*.ts is a surgical single-line splice. Additive, tolerate-unknown-fields; the
 // readers that will DECIDE on `shipped*` instead of `status` are MIL-283's breaking half.
 
+import { parseRevision } from "../cli/repoRevisions.js";
 import { createHash } from "node:crypto";
 import { scanSliceRegions } from "./sliceSections.js";
 import { renderSliceDocBodyHtml } from "./sliceDocRender.js";
@@ -508,7 +509,7 @@ function sha256(text: string): string {
  *  unambiguous. Readers that resolve revisions (GH #258's reachability check) act on
  *  `kind === "git"` only. */
 export interface ConformedAtRef {
-  /** `"git"` for a bare revision, else the declared kind. */
+  /** `"git"` for a bare revision, `"repos"` for a per-repo list (GH #534), else the declared kind. */
   kind: string;
   /** The revision, or the opaque identifier after the kind's `:`. */
   id: string;
@@ -517,6 +518,9 @@ export interface ConformedAtRef {
 const CONFORMED_AT_KIND = /^([a-z][a-z0-9-]*):(.+)$/;
 
 export function parseConformedAt(value: string): ConformedAtRef {
+  // GH #534: `<repo>=<rev>,…` — one git revision per repository the slice's code is in. Kind
+  // `"repos"`; `id` is the whole value, taken apart by cli/repoRevisions.ts's `parseRevision`.
+  if (parseRevision(value).kind === "per-repo") return { kind: "repos", id: value };
   const m = CONFORMED_AT_KIND.exec(value);
   return m ? { kind: m[1], id: m[2] } : { kind: "git", id: value };
 }

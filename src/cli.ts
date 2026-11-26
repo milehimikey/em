@@ -162,6 +162,7 @@ import { checkPrdTriage, buildCheckPrdTriageJson, renderPrdTriageMarkdown, valid
 import { checkFindingsFile, buildCheckFindingsJson, FindingLocus, FINDING_LOCI } from "./cli/findings.js";
 import { runBindingsCheck, buildBindingsCheckJson, renderBindingsCheckText } from "./cli/bindings.js";
 import { buildBindingRepos } from "./cli/bindingRepos.js";
+import { checkRevisionArg } from "./cli/repoRevisions.js";
 import {
   STATE_FILE_NAME,
   PHASES,
@@ -1926,7 +1927,7 @@ state
       "notice. Without a findings JSON beside --report and none at the report's revision: warns once and records the marker as " +
       "given (migration path for a report predating `em conform-findings`)",
   )
-  .argument("<revision>", "target-repo revision just diffed against")
+  .argument("<revision>", "target-repo revision just diffed against; for code in several repositories, one per repo as <repo id>=<rev>,… in repo-id order (GH #534)")
   .argument("[dir]", STATE_DIR_HELP, ".")
   .requiredOption("--report <path>", "path to the conformance report just written")
   .option("--partial", "record the marker as PARTIAL even though some in-scope findings are still unruled")
@@ -1935,6 +1936,11 @@ state
     "the bumper's name — required only when a full run must bump the design version first (none yet, or the model moved since); ignored when the current version is fresh",
   )
   .action((revision: string, dir: string, opts: { report: string; partial?: boolean; by?: string }) => {
+    const revisionOk = checkRevisionArg(revision, "<revision>");
+    if (!revisionOk.ok) {
+      console.error(`em state set-conformance: ${revisionOk.message}`);
+      process.exit(1);
+    }
     const loaded = loadStateFile(dir);
     if (!loaded.ok) {
       console.error(loaded.message);
@@ -2338,6 +2344,11 @@ program
       process.exit(1);
     }
     const ruling = opts.locus !== undefined && opts.by !== undefined ? { locus: opts.locus as FindingLocus, by: opts.by } : undefined;
+    const asOfOk = checkRevisionArg(opts.asOf, "--as-of");
+    if (!asOfOk.ok) {
+      console.error(`em conform-supersede: ${asOfOk.message}`);
+      process.exit(1);
+    }
 
     const result = runConformSupersede(dirname(file), reportPath, opts.asOf, opts.findings, on, ruling);
     if (!result.ok) {

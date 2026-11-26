@@ -20,6 +20,8 @@
 //
 // Kinded `conformedAt:` values (`build:1234`, GH #261) are not git revisions and are skipped —
 // `parseConformedAt` decides. Docs with no ref fields are not reported.
+import { parseRevision } from "./repoRevisions.js";
+import { SELF_REPO_ID } from "../system/manifest.js";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { NormalizedModel } from "../model/model.js";
@@ -30,6 +32,21 @@ import { GitRunner, realGit } from "./diff-inputs.js";
 import { sliceDocRel } from "../model/sliceDocPath.js";
 
 export type RefField = "ratifiedRef" | "shippedRef" | "conformedAt";
+
+/** The part of a `conformedAt:` this check can resolve: a bare revision, or the `self` entry of
+ *  a per-repo value (GH #534) — the only one that is a commit of the repository this check
+ *  runs in. Entries for other repositories are code revisions there; `em freshness` reports
+ *  whether each still resolves. Kinded values (`build:1234`) are never git revisions. */
+function conformedAtToCheck(value: string | null): string | null {
+  if (value === null) return null;
+  const kind = parseConformedAt(value).kind;
+  if (kind === "git") return value;
+  if (kind === "repos") {
+    const parsed = parseRevision(value);
+    return parsed.kind === "per-repo" ? parsed.revisions.find((r) => r.repo === SELF_REPO_ID)?.revision ?? null : null;
+  }
+  return null;
+}
 export type RefStatus = "ancestor" | "not-ancestor" | "unresolved" | "undecidable";
 
 export interface RefResult {
@@ -285,7 +302,7 @@ export function checkRefs(model: NormalizedModel, refs: RefsResult, baseDir: str
     const fields: Array<[RefField, string | null]> = [
       ["ratifiedRef", doc.ratifiedRef],
       ["shippedRef", doc.shippedRef],
-      ["conformedAt", doc.conformedAt !== null && parseConformedAt(doc.conformedAt).kind === "git" ? doc.conformedAt : null],
+      ["conformedAt", conformedAtToCheck(doc.conformedAt)],
     ];
     const present = fields.filter((f): f is [RefField, string] => f[1] !== null);
     if (present.length === 0) return;
