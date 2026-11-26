@@ -63,6 +63,20 @@ describe("matchImplementedInToPaths", () => {
   });
 });
 
+describe("bindings paths when --repo is a sub-directory of its work tree", () => {
+  it("changedPathsSince reports where --repo sits, and bound files are matched under it", () => {
+    const git = fakeGit([ok("/repo\n"), ok("services/checkout/src/H.kt\nsrc/H.kt\n"), ok("services/checkout/\n")]);
+    const changed = changedPathsSince("/repo/services/checkout", "abc123f", git);
+    expect(changed).toEqual({ ok: true, paths: ["services/checkout/src/H.kt", "src/H.kt"], boundPrefix: "services/checkout" });
+    const last: LastConformance = { date: "2026-11-01", revision: "abc123f", report: "r.md", partial: false };
+    const slices: SliceDocFacts[] = [{ key: "pay", status: "implemented", implementedIn: "https://x/pull/1", shipped: true, file: null, boundFiles: ["src/H.kt"] }];
+    // A bound `file` is relative to --repo: it names services/checkout/src/H.kt, not the root's src/H.kt.
+    expect(buildConformScope(slices, last, ["services/checkout/src/H.kt", "src/H.kt"], false, "services/checkout").candidateSlices).toEqual([
+      { key: "pay", matchedBy: "bindings", paths: ["services/checkout/src/H.kt"], file: null },
+    ]);
+  });
+});
+
 describe("buildConformScope: bindings manifest paths (GH #523)", () => {
   const last: LastConformance = { date: "2026-11-01", revision: "abc123f", report: "r.md", partial: false };
   const url = "https://github.com/example/repo/pull/9";
@@ -148,7 +162,7 @@ describe("changedPathsSince", () => {
   it("parses git diff --name-only output into a path list", () => {
     const git = fakeGit([ok("/repo\n"), ok("src/checkout/CheckoutHandler.kt\nsrc/billing/Invoice.kt\n")]);
     const result = changedPathsSince("/repo", "abc123", git);
-    expect(result).toEqual({ ok: true, paths: ["src/checkout/CheckoutHandler.kt", "src/billing/Invoice.kt"] });
+    expect(result).toEqual({ ok: true, paths: ["src/checkout/CheckoutHandler.kt", "src/billing/Invoice.kt"], boundPrefix: "" });
   });
 
   it("fails clearly when the path isn't a git repository", () => {

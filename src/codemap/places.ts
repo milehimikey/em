@@ -10,7 +10,8 @@
 //        - an event: its own context;
 //        - a view: the contexts of the events it reads (`from`);
 //        - an automation-band element (processor, translation, …) that reads something
-//          (`from "View"`): the contexts of what it reads — a reaction lives with its trigger;
+//          (`from "View"`): it takes the PLACE of what it reads, override and all — a reaction
+//          lives with its trigger (`placedBy: "reads"`);
 //        - a command, or a reaction fed from outside the model (no `from`): the contexts of
 //          the events declared in its own slice — the facts it records.
 //      So in an Automation slice the processor follows the to-do list it watches and the command
@@ -30,7 +31,7 @@ import { RefsResult } from "../model/refs.js";
 import { CodeMap, formatPlace, Place, samePlace } from "./codeMap.js";
 
 /** Which rule placed an element. `null` when nothing did. */
-export type PlacedBy = "element" | "persona" | "context" | "default" | "code-roots";
+export type PlacedBy = "element" | "persona" | "context" | "reads" | "default" | "code-roots";
 
 export interface ElementPlacement {
   /** The element's export ref. */
@@ -82,33 +83,20 @@ export function derivePlaces(model: NormalizedModel, refs: RefsResult, map: Code
     return out;
   };
 
-  /** The contexts of the events a view reads. */
-  const viewContexts = (view: Element): string[] => {
-    const sources: Element[] = [];
-    for (const name of view.from ?? []) {
-      for (const candidate of model.byName.get(normalizeName(name)) ?? []) {
-        if (candidate.kind === "event") sources.push(candidate);
-      }
-    }
-    return eventContexts(sources);
+  /** The element a `from "Name"` names: its first declaration of one of `kinds`, same as every
+   *  other `from` in em — and then that element's first instance on the timeline, so a name
+   *  that resolves to a later `again` instance still means the read model itself. */
+  const named = (name: string, kinds: readonly Element["kind"][]): Element | undefined => {
+    const first = (model.byName.get(normalizeName(name)) ?? []).find((c) => kinds.includes(c.kind));
+    return first === undefined ? undefined : model.byId.get(first.logicalId) ?? first;
   };
 
-  /** The contexts a non-ui element routes by (rule 3). */
+  /** The contexts a non-ui element routes by (rule 3); a reaction that reads something is
+   *  handled before this is asked. */
   const contextsOf = (el: Element): string[] => {
     if (el.kind === "event") return el.context === undefined ? [] : [el.context];
-    if (el.kind === "view") return viewContexts(el);
-    if (AUTOMATION_KINDS.has(el.kind) && (el.from?.length ?? 0) > 0) {
-      const out: string[] = [];
-      const add = (c: string): void => {
-        if (!out.includes(c)) out.push(c);
-      };
-      for (const name of el.from ?? []) {
-        // A name resolves to its first declaration, same as every other `from` in em.
-        const first = (model.byName.get(normalizeName(name)) ?? []).find((c) => c.kind === "view" || c.kind === "event");
-        if (first?.kind === "event" && first.context !== undefined) add(first.context);
-        else if (first?.kind === "view") viewContexts(first).forEach(add);
-      }
-      return out;
+    if (el.kind === "view") {
+      return eventContexts((el.from ?? []).map((n) => named(n, ["event"])).filter((e): e is Element => e !== undefined));
     }
     return eventContexts(model.slices[el.sliceIndex].elements.filter((e) => e.kind === "event"));
   };
@@ -119,6 +107,24 @@ export function derivePlaces(model: NormalizedModel, refs: RefsResult, map: Code
     if (el.logicalId !== el.id) {
       const first = model.byId.get(el.logicalId);
       if (first) return placeOne(first);
+    }
+
+    // A reaction that reads something lives where what it reads lives — its place, override
+    // included, not merely its contexts.
+    if (AUTOMATION_KINDS.has(el.kind) && (el.from?.length ?? 0) > 0) {
+      const sources = (el.from ?? []).map((n) => named(n, ["view", "event"])).filter((e): e is Element => e !== undefined && e !== el);
+      if (sources.length > 0) {
+        const placed = sources.map((src) => ({ src, at: placeOne(src) }));
+        const first = placed[0].at.places;
+        if (first.length > 0 && placed.every((p) => samePlaces(p.at.places, first))) {
+          return { places: first, placedBy: "reads", unplacedReason: null };
+        }
+        const detail = placed
+          .map((p) => `${p.src.kind} "${p.src.name}" -> ${p.at.places.length > 0 ? p.at.places.map(formatPlace).join(", ") : "no place"}`)
+          .join("; ");
+        const why = placed.some((p) => p.at.places.length === 0) ? "what it reads has no place" : "what it reads lives in different places";
+        return { places: [], placedBy: null, unplacedReason: `${why} (${detail})` };
+      }
     }
 
     if (el.kind === "ui") {
@@ -136,8 +142,7 @@ export function derivePlaces(model: NormalizedModel, refs: RefsResult, map: Code
         const detail = routed
           .map((r) => `${r.context} -> ${r.places.length > 0 ? r.places.map(formatPlace).join(", ") : "no place"}`)
           .join("; ");
-        const what =
-          el.kind === "view" ? "the events it reads" : AUTOMATION_KINDS.has(el.kind) && (el.from?.length ?? 0) > 0 ? "what it reads" : "the events in its slice";
+        const what = el.kind === "view" ? "the events it reads" : "the events in its slice";
         return { places: [], placedBy: null, unplacedReason: `${what} sit in contexts that route to different places (${detail})` };
       }
     }

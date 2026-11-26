@@ -374,7 +374,7 @@ describe("boundFilesForSlice (GH #523)", () => {
       writeFileSync(
         join(dir, bindingsFilePath("place-order")),
         `bindingsSchemaVersion: "1.0"\nslice: place-order\nelements:\n` +
-          `  - {ref: command.place-order, file: ./src/handler.ts, identifier: placeOrder}\n` +
+          `  - {ref: command.place-order, file: ".\\\\src\\\\handler.ts", identifier: placeOrder}\n` +
           `  - {ref: event.order-placed, file: src/handler.ts, identifier: OrderPlaced}\n` +
           `invariants:\n  - id: INV-PO-1\n    enforcedIn: {file: src/rules.ts, identifier: check}\n    testedIn: {file: test/rules.test.ts, identifier: check}\n`,
       );

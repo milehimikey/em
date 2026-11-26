@@ -47,7 +47,7 @@ elements:
 | Key | Type | Meaning |
 |---|---|---|
 | `codeMapSchemaVersion` | string, `"1.0"` | Required. Any other value is refused. |
-| `model` | string (optional) | The model file this map describes, as a bare file name (`checkout.em`). Give it only when the directory holds more than one `.em` file: a map that names another model is not applied to this one, the same way a state file's `Model file:` works. Absent, the map describes every model in the directory. |
+| `model` | string (optional) | The model file this map describes, as a bare file name (`checkout.em`). Give it only when the directory holds more than one `.em` file: a map that names another model in the directory is not applied to this one (and is not reported against it, even when malformed), the same way a state file's `Model file:` works. The name must match a file exactly, case included; a `model:` that names no file in the directory is `code-map-invalid`, so a typo cannot switch the map off unnoticed. Absent, the map describes every model in the directory. |
 | `default` | place (optional) | The place of every element no other rule places. Absent, the state file's `Code roots:` are the default, in `self` (see Routing). |
 | `personas` | mapping: persona name → place (optional) | Routes `ui` elements. The name is spelled as the model declares it, without the `@`. |
 | `contexts` | mapping: context name → place (optional) | Routes everything that is not a `ui`. The name is spelled as the model declares it, without the `@`. |
@@ -85,7 +85,7 @@ Each element gets its place from the first rule that applies:
    |---|---|
    | `event` | itself |
    | `view` | the events it reads (`from`) |
-   | a processor, translation or other automation-band element that reads something (`from "View"`) | what it reads: a reaction lives with its trigger |
+   | a processor, translation or other automation-band element that reads something (`from "View"`) | nothing: it takes the **place** of what it reads, override included. A reaction lives with its trigger (`placedBy: "reads"`) |
    | `command`; a reaction fed from outside the model (no `from`) | the events declared in its own slice: the facts it records |
 
    When those contexts all route to one place, that is the element's place. A context with no
@@ -102,7 +102,12 @@ first instance.
 **`em` never picks between two places.** When the contexts an element borrows route to different
 places (a view that reads events from two services), the model does not say where the element
 lives, and it is reported as unplaced (`code-map-element-unplaced`) until an `elements:` override
-settles it.
+settles it. A reaction that reads such a view is unplaced for the same reason, and the one
+override on the view places both. The same goes for a reaction that reads two things living in
+different places.
+
+One case is settled by the rule above rather than reported: a view whose later `again` instance
+reads another service's events lives where its first instance lives.
 
 **An Automation slice can span two repositories.** Its processor follows the to-do list it
 watches and its command follows the event it records. When those sit in different contexts, the

@@ -40,13 +40,37 @@ export function loadCodeMap(modelFile: string): LoadedCodeMap {
     pushDiag(diagnostics, "code-map-invalid", { message: `cannot read ${CODE_MAP_FILE}: ${(e as Error).message}` });
     return { kind: "invalid", path, diagnostics: diagnostics.map(inCodeMap) };
   }
+  // Whose map is it? Asked first, so a map that names another model is never reported against
+  // this one, even when the rest of it is malformed.
+  const named = declaredModel(text);
+  if (named !== null && named !== basename(modelFile)) {
+    if (existsSync(join(dirname(modelFile), named))) return { kind: "none" };
+    // It names no file here: a typo (or wrong case) that would otherwise switch the map off silently.
+    pushDiag(diagnostics, "code-map-invalid", {
+      message: `${CODE_MAP_FILE}: \`model: ${named}\` names no file in this directory — it must be the model file's exact name (this is "${basename(modelFile)}")`,
+      line: named === null ? undefined : lineOfModelKey(text),
+    });
+    return { kind: "invalid", path, diagnostics: diagnostics.map(inCodeMap) };
+  }
   const parsed = parseCodeMap(text);
   if (!parsed.ok) {
     for (const p of parsed.problems) pushDiag(diagnostics, "code-map-invalid", { message: `${CODE_MAP_FILE}: ${p.message}`, line: p.line });
     return { kind: "invalid", path, diagnostics: diagnostics.map(inCodeMap) };
   }
-  if (parsed.map.model !== null && parsed.map.model !== basename(modelFile)) return { kind: "none" };
   return { kind: "ok", path, map: parsed.map };
+}
+
+/** The `model:` value of a code map, read tolerantly (the file may not shape-validate): a bare
+ *  file name, or `null` when absent, not a plain name, or the YAML does not parse. */
+function declaredModel(text: string): string | null {
+  const m = /^model:[ \t]*(?:"([^"\n]*)"|'([^'\n]*)'|([^#\n]*?))[ \t]*(?:#.*)?$/m.exec(text);
+  const value = (m?.[1] ?? m?.[2] ?? m?.[3] ?? "").trim();
+  return value === "" || /[\\/]/.test(value) ? null : value;
+}
+
+function lineOfModelKey(text: string): number | undefined {
+  const i = text.split(/\r?\n/).findIndex((l) => /^model:/.test(l));
+  return i < 0 ? undefined : i + 1;
 }
 
 /** A diagnostic whose `line` counts in the code map, not in the `.em` file. */
@@ -63,10 +87,12 @@ export function validateCodeMap(
   model: NormalizedModel,
   refs: RefsResult,
   modelFile: string,
-  fallback: Place[] = codeRootPlaces(modelFile),
+  fallbackOverride?: Place[],
 ): Diagnostic[] {
   const loaded = loadCodeMap(modelFile);
   if (loaded.kind === "none") return [];
+  // Read the state file only once there is a map to apply it to.
+  const fallback = fallbackOverride ?? codeRootPlaces(modelFile);
   if (loaded.kind === "invalid") return loaded.diagnostics;
   const { map } = loaded;
   const fileDiags: Diagnostic[] = [];
@@ -125,7 +151,10 @@ export function validateCodeMap(
     const p = placement.elements[i];
     if (p.places.length > 0) return;
     pushDiag(out, "code-map-element-unplaced", {
-      message: `${el.kind} "${el.name}" has no place: ${p.unplacedReason} — add \`${p.ref}\` under \`elements:\` in ${CODE_MAP_FILE}, or give the map a \`default:\` (or the state file a \`Code roots:\` bullet)`,
+      message:
+        `${el.kind} "${el.name}" has no place: ${p.unplacedReason} — add \`${p.ref}\` under \`elements:\` in ${CODE_MAP_FILE}` +
+        // A default only helps an element nothing covers; it cannot settle two competing places.
+        (p.unplacedReason?.includes("has no `default:`") ? ", or give the map a `default:` (or the state file a `Code roots:` bullet)" : ""),
       line: el.line,
       refs: [p.ref],
     });
