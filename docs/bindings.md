@@ -1,4 +1,4 @@
-# Bindings manifest schema (`bindingsSchemaVersion` 1.0)
+# Bindings manifest schema (`bindingsSchemaVersion` 1.1; 1.0 is a file with no `repo:`)
 
 **Not [`contract-bindings.md`](contract-bindings.md).** That page documents hand-authored
 TypeSpec binding files that extend an `em api generate` contract with routes, envelopes and
@@ -69,7 +69,7 @@ invariants:
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
-| `bindingsSchemaVersion` | string | yes | This contract's version. Only `"1.0"` is accepted today. |
+| `bindingsSchemaVersion` | string | yes | This contract's version: `"1.0"`, or `"1.1"` for a file that carries `repo:` (GH #531, em 1.24.0). Any other value is refused. |
 | `slice` | string | yes | The slice export key this file binds (the same key `em export`/`em query`/every `<slice-key>` CLI argument uses — see [cli.md#slice-keys](cli.md#slice-keys)). Must equal the file's own name stem. |
 | `elements` | list | no (default `[]`) | Model elements bound to code — see below. |
 | `invariants` | list | no (default `[]`) | `INV-*` invariants bound to their enforcement and test sites — see below. |
@@ -85,14 +85,51 @@ the point of a verified contract).
 | `file` | string | yes | Repo-relative path (resolved against whatever `--repo` names at check time — never absolutized here). |
 | `identifier` | string | yes | A plain substring to search for in `file` — a function/class/symbol name, a string literal, anything findable with a text search. Never parsed as code: no language awareness, no AST, so the same schema binds Kotlin, TypeScript, Python, anything. |
 | `note` | string | no (default `null`) | Free-text context for a human — why this file, why this identifier. Never checked. |
+| `repo` | string | no | Schema 1.1. The repository `file` is relative to: a repo id declared under `repos:` in the governing `system.yaml`, or `self` for the model's own repository. See below. |
 
 ## `invariants[]`
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `id` | string | yes | An `INV-*` token — the same stable ID convention a slice doc's `## Invariants / Business Rules` section uses (see [slice-doc-schema.md](slice-doc-schema.md)). Only checked here for looking like an `INV-*` token; it is never cross-checked against the slice doc's own declared IDs (that is `em validate`/`em coverage`'s job, not this file's). |
-| `enforcedIn` | `{ file, identifier }` | yes | Where the rule is enforced in code — same two fields as an element binding, same plain-substring check. |
-| `testedIn` | `{ file, identifier }` | yes | Where the rule is exercised by a test — same shape. |
+| `enforcedIn` | `{ file, identifier }` | yes | Where the rule is enforced in code — same two fields as an element binding, same plain-substring check. Schema 1.1 adds an optional `repo` here too. |
+| `testedIn` | `{ file, identifier }` | yes | Where the rule is exercised by a test — same shape, including the optional `repo`. |
+
+## `repo:` — a slice whose code is in more than one repository (schema 1.1)
+
+A slice's code can be spread over repositories: a `ui` in the frontend repository, its command in
+a service's ([code-map-schema.md](code-map-schema.md)). A binding then has to say which
+repository its `file` is relative to:
+
+```yaml
+bindingsSchemaVersion: "1.1"
+slice: place-order
+elements:
+  - ref: ui.checkout
+    repo: storefront-web
+    file: src/checkout/CheckoutPage.tsx
+    identifier: CheckoutPage
+  - ref: command.place-order
+    repo: checkout-svc
+    file: src/orders/Handler.kt
+    identifier: placeOrder
+invariants:
+  - id: INV-PO-1
+    enforcedIn: {repo: checkout-svc, file: src/orders/Handler.kt, identifier: validateStock}
+    testedIn: {repo: checkout-svc, file: test/orders/HandlerTest.kt, identifier: "rejects when out of stock"}
+```
+
+- `repo` is a repo id: one declared under `repos:` in the `system.yaml` that governs the model,
+  or `self` for the repository the model lives in. It is never a path. Where a repo id is
+  checked out on a machine is resolved at check time
+  ([cli.md](cli.md#em-repos-check-target)).
+- `repo` is optional on every binding. **A binding without one lives in the slice's one
+  repository**, which is every binding of a slice whose code is in a single repository. So the
+  file for such a slice needs no `repo:` at all, and stays valid as `"1.0"`.
+- A file declares `"1.1"` to use the key. `repo:` in a `"1.0"` file is an error that names the
+  version to set; nothing else about the file changes.
+- One bindings file per slice still. The implementers of a slice's parts each hand back their
+  own entries, and the file is written once, in the model's repository.
 
 ## What `em conform bindings check` verifies, and what it doesn't
 
@@ -127,5 +164,6 @@ holds. Run it from a scheduled or opt-in CI job, same as `em-conform.yml`'s conf
 check`'s own output schema (`bindingsCheckSchemaVersion`, documented in
 [cli.md](cli.md#em-conform-bindings-check-file---repo-path)). An additive key would bump the
 minor version; renaming or removing a key would bump the major version and need every existing
-bindings file rewritten. There is no migration tooling today — `"1.0"` is the only version this
-`em` accepts, on both the manifest and the check's own JSON.
+bindings file rewritten. `"1.1"` (em 1.24.0) added the optional `repo:`; a `"1.0"` file and a
+`"1.1"` file with no `repo:` read identically, and no file needs rewriting. An `em` older than
+1.24.0 refuses a `"1.1"` file as an unsupported version.

@@ -23,11 +23,18 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { LineCounter, parseDocument, isMap, isSeq, isScalar, Node } from "yaml";
 import type { RefsResult } from "../model/refs.js";
+import { isRepoId, SELF_REPO_ID } from "../system/manifest.js";
 
 /** The bindings-file schema version `em` writes expectations against. There is no writer in
  *  `em` itself (the file contract is hand-authored, or written by any other tool) — this is
  *  purely what `parseBindingsFile` accepts. */
 export const BINDINGS_SCHEMA_VERSION = "1.0";
+// 1.1 (GH #531): 1.0 + an optional `repo:` on each element and on each invariant's
+// `enforcedIn`/`testedIn` — the repo id (system.yaml `repos:`, or `self`) the bound file lives in,
+// for a slice whose code is in more than one repository. Additive: a 1.0 file, and a 1.1 file
+// with no `repo:`, read exactly as before. A file declares "1.1" to carry `repo:`.
+/** The version a bindings file declares to carry `repo:`. Read alongside 1.0. */
+export const BINDINGS_REPO_SCHEMA_VERSION = "1.1";
 
 /** Where every per-slice bindings file lives, relative to the model's own directory. */
 export const BINDINGS_DIR = "conformance/bindings";
@@ -45,6 +52,10 @@ const REF_RE = /^[a-z][a-z0-9]*\.[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export interface BindingSite {
   /** Repo-relative path (resolved against `--repo`, never absolutized here). */
   file: string;
+  /** Schema 1.1 (GH #531): the repo id `file` is relative to — an id under `repos:` in the
+   *  governing system.yaml, or `self`. Absent when the file does not say: the binding then
+   *  lives in the slice's one repository. */
+  repo?: string;
   /** Plain substring to search for in `file` — never parsed as code. */
   identifier: string;
 }
@@ -76,8 +87,10 @@ export type ParseBindingsResult = { ok: true; doc: BindingsFile } | { ok: false;
 
 const TOP_KEYS = new Set(["bindingsSchemaVersion", "slice", "elements", "invariants"]);
 const ELEMENT_KEYS = new Set(["ref", "file", "identifier", "note"]);
+const ELEMENT_KEYS_1_1 = new Set([...ELEMENT_KEYS, "repo"]);
 const INVARIANT_KEYS = new Set(["id", "enforcedIn", "testedIn"]);
 const SITE_KEYS = new Set(["file", "identifier"]);
+const SITE_KEYS_1_1 = new Set([...SITE_KEYS, "repo"]);
 
 /**
  * Shape-validate a bindings file's YAML text. `expectedSlice`, when given, is the slice key the
@@ -119,9 +132,31 @@ export function parseBindingsFile(text: string, expectedSlice?: string): ParseBi
   const version = scalarString(versionNode);
   if (version === undefined) {
     invalid(`missing or non-string \`bindingsSchemaVersion\` — set \`bindingsSchemaVersion: "${BINDINGS_SCHEMA_VERSION}"\``, lineOf(versionNode));
-  } else if (version !== BINDINGS_SCHEMA_VERSION) {
-    invalid(`unsupported bindingsSchemaVersion "${version}" — this em accepts "${BINDINGS_SCHEMA_VERSION}"`, lineOf(versionNode));
+  } else if (version !== BINDINGS_SCHEMA_VERSION && version !== BINDINGS_REPO_SCHEMA_VERSION) {
+    invalid(
+      `unsupported bindingsSchemaVersion "${version}" — this em accepts "${BINDINGS_SCHEMA_VERSION}" and "${BINDINGS_REPO_SCHEMA_VERSION}"`,
+      lineOf(versionNode),
+    );
   }
+  const withRepo = version === BINDINGS_REPO_SCHEMA_VERSION;
+  const elementKeys = withRepo ? ELEMENT_KEYS_1_1 : ELEMENT_KEYS;
+  const siteKeys = withRepo ? SITE_KEYS_1_1 : SITE_KEYS;
+  /** `repo:` on an element or a site: a repo id, or `undefined` when absent. Under 1.0 the key
+   *  is refused with the version to set, rather than as a bare "unknown key". */
+  const repoOf = (map: { get(key: string, keepScalar: true): unknown }, what: string, line: number | undefined): string | undefined => {
+    const node = map.get("repo", true) as Node | undefined;
+    if (node === undefined) return undefined;
+    if (!withRepo) {
+      invalid(`${what}: \`repo:\` needs bindingsSchemaVersion "${BINDINGS_REPO_SCHEMA_VERSION}" — set \`bindingsSchemaVersion: "${BINDINGS_REPO_SCHEMA_VERSION}"\` (nothing else in the file changes)`, lineOf(node) ?? line);
+      return undefined;
+    }
+    const value = scalarString(node);
+    if (value === undefined || !isRepoId(value.trim())) {
+      invalid(`${what}: \`repo\` must be a repo id (an id under \`repos:\` in system.yaml, or \`${SELF_REPO_ID}\`)`, lineOf(node) ?? line);
+      return undefined;
+    }
+    return value.trim();
+  };
 
   const sliceNode = root.get("slice", true) as Node | undefined;
   const slice = scalarString(sliceNode);
@@ -149,8 +184,10 @@ export function parseBindingsFile(text: string, expectedSlice?: string): ParseBi
         }
         for (const p of item.items) {
           const k = scalarString(p.key);
-          if (k === undefined || !ELEMENT_KEYS.has(k)) invalid(`elements[${i}]: unknown key ${describeKey(p.key)} — expected ref, file, identifier, note`, lineOf(p));
+          if (k === "repo") continue; // checked by `repoOf` below, with a version-aware message
+          if (k === undefined || !elementKeys.has(k)) invalid(`elements[${i}]: unknown key ${describeKey(p.key)} — expected ${[...elementKeys].join(", ")}`, lineOf(p));
         }
+        const repo = repoOf(item, `elements[${i}]`, line);
         const ref = scalarString(item.get("ref", true) as Node | undefined);
         const file = scalarString(item.get("file", true) as Node | undefined);
         const identifier = scalarString(item.get("identifier", true) as Node | undefined);
@@ -166,7 +203,7 @@ export function parseBindingsFile(text: string, expectedSlice?: string): ParseBi
           else note = n;
         }
         if (ref !== undefined && ref.trim() !== "" && file !== undefined && file.trim() !== "" && identifier !== undefined && identifier.trim() !== "") {
-          elements.push({ ref: ref.trim(), file: file.trim(), identifier, note });
+          elements.push({ ref: ref.trim(), file: file.trim(), identifier, note, ...(repo === undefined ? {} : { repo }) });
         }
       });
     }
@@ -201,14 +238,16 @@ export function parseBindingsFile(text: string, expectedSlice?: string): ParseBi
           }
           for (const p of siteNode.items) {
             const k = scalarString(p.key);
-            if (k === undefined || !SITE_KEYS.has(k)) invalid(`invariants[${i}].${key}: unknown key ${describeKey(p.key)} — expected file, identifier`, lineOf(p));
+            if (k === "repo") continue;
+            if (k === undefined || !siteKeys.has(k)) invalid(`invariants[${i}].${key}: unknown key ${describeKey(p.key)} — expected ${[...siteKeys].join(", ")}`, lineOf(p));
           }
+          const repo = repoOf(siteNode, `invariants[${i}].${key}`, siteLine);
           const file = scalarString(siteNode.get("file", true) as Node | undefined);
           const identifier = scalarString(siteNode.get("identifier", true) as Node | undefined);
           if (file === undefined || file.trim() === "") invalid(`invariants[${i}].${key}.file must be a non-empty repo-relative path`, siteLine);
           if (identifier === undefined || identifier.trim() === "") invalid(`invariants[${i}].${key}.identifier must be a non-empty string`, siteLine);
           if (file !== undefined && file.trim() !== "" && identifier !== undefined && identifier.trim() !== "") {
-            return { file: file.trim(), identifier };
+            return { file: file.trim(), identifier, ...(repo === undefined ? {} : { repo }) };
           }
           return undefined;
         };

@@ -164,6 +164,61 @@ describe("parseBindingsFile", () => {
   });
 });
 
+describe("parseBindingsFile: repo (schema 1.1, GH #531)", () => {
+  const head = (v: string) => `bindingsSchemaVersion: "${v}"\nslice: place-order\n`;
+  const WITH_REPO =
+    `elements:\n  - {ref: ui.checkout, repo: storefront-web, file: src/Checkout.tsx, identifier: Checkout}\n  - {ref: command.place-order, file: src/handler.ts, identifier: placeOrder}\n` +
+    `invariants:\n  - id: INV-PO-1\n    enforcedIn: {repo: self, file: src/handler.ts, identifier: validate}\n    testedIn: {file: src/handler.test.ts, identifier: validates}\n`;
+
+  it("reads repo on elements and invariant sites; a binding without one carries no repo key", () => {
+    const r = parseBindingsFile(head("1.1") + WITH_REPO, "place-order");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.doc.bindingsSchemaVersion).toBe("1.1");
+    expect(r.doc.elements).toEqual([
+      { ref: "ui.checkout", file: "src/Checkout.tsx", identifier: "Checkout", note: null, repo: "storefront-web" },
+      { ref: "command.place-order", file: "src/handler.ts", identifier: "placeOrder", note: null },
+    ]);
+    expect(r.doc.invariants).toEqual([
+      { id: "INV-PO-1", enforcedIn: { file: "src/handler.ts", identifier: "validate", repo: "self" }, testedIn: { file: "src/handler.test.ts", identifier: "validates" } },
+    ]);
+  });
+
+  it("a 1.1 file with no repo reads the same as its 1.0 twin, apart from the version", () => {
+    const body = `elements:\n  - {ref: command.place-order, file: src/handler.ts, identifier: placeOrder}\n`;
+    const a = parseBindingsFile(head("1.0") + body, "place-order");
+    const b = parseBindingsFile(head("1.1") + body, "place-order");
+    expect(a.ok && b.ok).toBe(true);
+    if (a.ok && b.ok) expect({ ...b.doc, bindingsSchemaVersion: "1.0" }).toEqual(a.doc);
+  });
+
+  it("refuses repo under 1.0, naming the version to set, on an element and on a site", () => {
+    const r = parseBindingsFile(head("1.0") + WITH_REPO, "place-order");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.errors).toEqual([
+      'line 4: elements[0]: `repo:` needs bindingsSchemaVersion "1.1" — set `bindingsSchemaVersion: "1.1"` (nothing else in the file changes)',
+      'line 8: invariants[0].enforcedIn: `repo:` needs bindingsSchemaVersion "1.1" — set `bindingsSchemaVersion: "1.1"` (nothing else in the file changes)',
+    ]);
+  });
+
+  it.each([
+    [`elements:\n  - {ref: ui.checkout, repo: "two words", file: a, identifier: b}\n`, "elements[0]: `repo` must be a repo id"],
+    [`elements:\n  - {ref: ui.checkout, repo: ../web, file: a, identifier: b}\n`, "elements[0]: `repo` must be a repo id"],
+    [`invariants:\n  - id: INV-A-1\n    enforcedIn: {repo: 7, file: a, identifier: b}\n    testedIn: {file: a, identifier: b}\n`, "invariants[0].enforcedIn: `repo` must be a repo id"],
+    [`elements:\n  - {ref: ui.checkout, path: x, file: a, identifier: b}\n`, 'elements[0]: unknown key "path" — expected ref, file, identifier, note, repo'],
+  ])("1.1 refuses %j", (body, message) => {
+    const r = parseBindingsFile(head("1.1") + body, "place-order");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join("\n")).toContain(message);
+  });
+
+  it("an unsupported version names both accepted ones", () => {
+    const r = parseBindingsFile(head("2.0"), "place-order");
+    expect(!r.ok && r.errors.join("\n")).toContain('this em accepts "1.0" and "1.1"');
+  });
+});
+
 describe("runBindingsCheck", () => {
   let modelDir: string;
   let repoDir: string;
