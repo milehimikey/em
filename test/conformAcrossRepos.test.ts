@@ -76,8 +76,9 @@ describe("conformance across repositories (GH #533)", () => {
     mkdirSync(join(dir, "conformance", "bindings"), { recursive: true });
     writeFileSync(join(dir, "conformance", "bindings", "place-order.yaml"), BIND_PLACE);
     writeFileSync(join(dir, "conformance", "bindings", "open-orders.yaml"), BIND_OPEN);
-    for (const [key, n] of [["place-order", 1], ["open-orders", 2]] as const) {
-      expect(em(["slice", "mark-implemented", "shop.em", key, `https://github.com/acme/orders/pull/${n}`], dir).status).toBe(0);
+    // place-order's code is in two repositories, so it ships as one pull request per unit (GH #539).
+    for (const [key, repo, n] of [["place-order", "web", 1], ["place-order", "orders", 3], ["open-orders", "orders", 2]] as const) {
+      expect(em(["slice", "mark-implemented", "shop.em", key, `https://github.com/acme/${repo}/pull/${n}`, "--unit", repo], dir).status).toBe(0);
     }
     commit(modelRepo, "model");
     expect(em(["model", "version", "bump", "shop.em", "--by", "Alex Rivera"], dir).status).toBe(0);
