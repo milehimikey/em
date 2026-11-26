@@ -39,6 +39,8 @@ em conform bindings check <model>.em --repo <path> --slice <slice-key> --exit-co
 
 Exit 0 is required. If it fails, fix the bindings file — a wrong `ref`, a stale `file`/`identifier` pair — never report the slice done with a failing binding.
 
+**For a work unit, hand the entries back instead.** The slice's bindings file lives in the model's repository, which you do not write to, and it is written once for the whole slice. So do not create or edit it. Complete the binding entries block your brief gives you (your elements, and the invariants your code enforces or tests, each entry with `repo: <your unit's repo>`, `file` relative to your repository's root, and the `identifier`), check each `file`/`identifier` pair yourself with a text search, and put the completed block in the pull request description and in your reply. No entry may be left as `TODO`.
+
 ## Tracking key
 
 If your prompt carries a tracking key (an issue-tracker key such as `PROJ-123`, or a URL), the lead has already resolved it for this slice: the slice doc's own `tracking:` wins over the engagement's. Use it as given:
@@ -66,4 +68,5 @@ Reply with:
 
 - The pull request URL (its title is exactly the one you were given).
 - A per-invariant test map: one line per `INV-*` id, `INV-<id> -> <test file>::<test name>`. For a work unit, one line per invariant your elements carry, and a `not mine: INV-<id> -> <unit id>` line for each of the slice's others.
+- For a work unit: the completed binding entries block (YAML), exactly as it appears in the pull request description.
 - Any gap you stopped on, stated as the doc line and the question.

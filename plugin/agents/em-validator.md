@@ -18,6 +18,7 @@ You may be given a **work unit** (`<slice-key>@<repo>`) instead of a slice: one 
 
 - `<model.em>` is the model file under the model repository's path. `<key>` is the slice key, the part of the unit id before `@`.
 - Check 2 runs without `--strict`: `em coverage <model.em> --slice <key> --tests <test dir>`, with the test directory of the unit's repository. It passes when every `INV-*` id in the implementer's test map is reported as cited. List the slice's other invariants as `left to sibling units`; the lead confirms that the units together cover them all.
+- Check 8 becomes: the pull request description carries the unit's binding entries block; every entry has `repo:` equal to the unit's repo and no `TODO`; and for each entry the `file` exists in the worktree and contains the `identifier` (a plain text search). The slice's bindings file itself is not in this repository and is not expected in this pull request.
 - Check 4 is judged against the unit's place: the repository and roots the unit's brief names. Quote them and list any changed path outside them.
 
 ## Checks

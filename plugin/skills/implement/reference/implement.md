@@ -571,6 +571,29 @@ unit's PR cites it. What a unit's implementer is given, and does differently:
   citing its id; the others are named as another unit's. `em coverage … --strict` over the whole
   slice is the lead's check once every unit has reported, not one unit's.
 
+### Bindings, and the closing step
+
+A slice has **one** bindings file, `conformance/bindings/<slice-key>.yaml`, and it lives in the
+model's repository. A unit working in a code repository cannot commit it, and two units must not
+both write it. So a unit **hands its entries back**: the brief carries a block with the unit's
+elements, each with `repo:`, and the implementer completes `file` and `identifier`, adds the
+invariants its code enforces or tests, and puts the block in the PR description. No entry is left
+as `TODO`.
+
+The slice's **closing step** then runs once, in the model's repository, after every unit's PR
+has merged. Whoever leads the work (the engagement lead, or a person) does it:
+
+1. Write `conformance/bindings/<slice-key>.yaml` with `bindingsSchemaVersion: "1.1"` from the
+   blocks the units handed back.
+2. Verify it against the merged code:
+   `em conform bindings check <model>.em --slice <slice-key> --exit-code`.
+3. Record each unit's PR: `em slice mark-implemented <model>.em <slice-key> <pr-url> --unit
+   <repo>`. The doc flips to `implemented` when the last unit is recorded (§6's flip, once for the
+   slice).
+4. Commit on a branch of the model's repository and open a PR.
+
+Until the closing step has merged, the slice is not done, however many of its units have.
+
 ### Isolation, per unit
 
 §8 rule 3 says a slice never creates, edits or reaches into another slice's code. For a work

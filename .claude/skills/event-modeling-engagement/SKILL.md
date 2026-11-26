@@ -294,6 +294,32 @@ merged`, then remove that worktree: `git -C <repo path> worktree remove .claude/
 A slice reads `merged` only when every one of its units does. A unit whose `dependsOn` just
 cleared becomes startable. When all of a slice's units are `merged`, its closing step is due.
 
+**The closing step (`close:<key>`), in the model's repository.** It is the node the plan lists
+with `kind: "close"`, and it replaces the per-slice part of section 6.3 for a slice with units.
+Do it yourself; it is bookkeeping, not slice code. Once every unit of the slice is `merged`:
+
+1. In the model's repository: `git switch main && git pull --ff-only`, then
+   `git switch -c close/<key> main` (the branch the node names). Several slices' closing steps
+   of one level may share one branch and one PR, `engagement/<slug>-level-<n>`, as in section 6.3.
+2. **Write the slice's bindings file** from the entries each unit's implementer handed back in
+   its PR description: one file, `conformance/bindings/<key>.yaml`, `bindingsSchemaVersion:
+   "1.1"`, `slice: <key>`, then every unit's `elements:` entries and `invariants:` entries
+   together, each keeping its `repo:`. Copy what was handed back; do not re-derive it. If a unit
+   handed back nothing, or an entry is still `TODO`, go back to that unit's implementer.
+3. Verify it against the merged code: update each repository's `main` (`git -C <repo path> switch
+   main && git -C <repo path> pull --ff-only`), then
+   `em conform bindings check <model>.em --slice <key> --exit-code`. Exit 0 is required.
+4. Record each unit's pull request:
+   `em slice mark-implemented <model>.em <key> <pr-url> --unit <repo>`, once per unit. The doc
+   flips to `implemented` on the last one. Then `em slice index <model>.em`.
+5. Commit, and `gh pr create --base main` with the node's `prTitle` and its `marker` line in the
+   body. The human merges it like any other PR. The plan then reports the closing step `merged`,
+   because the slice doc records the slice as shipped.
+
+A slice whose units have all merged but whose closing step has not is **not done**: its doc
+still reads `ready-to-implement`, and its bindings are not recorded. Say so in every hand-back
+until it is.
+
 ## Never do
 
 | Rule | Because |
