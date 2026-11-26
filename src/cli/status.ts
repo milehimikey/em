@@ -36,6 +36,7 @@ import { GitRunner, realGit } from "./diff-inputs.js";
 import { loadStateFile, parseState, modelPathMismatch } from "./stateFile.js";
 import { SliceDocFacts, changedPathsSince, buildConformScope } from "./conformScope.js";
 import { boundFilesForSlice } from "./bindings.js";
+import { compareRepos, planRepoConformance, qualifiedChangedPaths, qualifyBoundFiles } from "./conformRepos.js";
 import { findingsFilesOf, resolveFindingsForReport, unruledAcrossFiles } from "./sliceConform.js";
 import { findCertifiedVersion, latestModelVersionNumber, modelVersionDrift, ModelVersionSliceChange } from "./modelVersion.js";
 import { isOlder } from "../util/semver.js";
@@ -241,6 +242,12 @@ export interface ConformanceEntry {
    *  a state-file parse failure (unparseable `Last conformance:` bullet), same non-fatal
    *  treatment. */
   error: string | null;
+  /** GH #533: present only when the model's code is in several repositories. One entry per
+   *  repository in play: the revision recorded for it, its own commits behind HEAD, and why it
+   *  could not be compared when it could not (no checkout on this machine, no recorded
+   *  revision, a git failure). `commitsBehindHead` and `slicePRsBehindHead` above are then the
+   *  totals over the repositories that could be compared, and `repo` is the model's directory. */
+  repos?: { repo: string; revision: string | null; commitsBehindHead: number | null; error: string | null }[];
 }
 
 // ---- Implementation constitution (MIL-202) ----
@@ -394,12 +401,18 @@ export function resolveSlicePRsBehindHead(
  */
 export function resolveConformanceEntry(
   file: string,
-  repoOverride: string | undefined,
+  repoOverride: string | readonly string[] | undefined,
   sliceDocFacts: SliceDocFacts[],
   runGit: GitRunner = realGit,
+  /** GH #533: the compiled model, so a model whose code is in several repositories is compared
+   *  repository by repository. Without it the entry is computed against one repository, as it
+   *  always was. */
+  compiled?: { model: NormalizedModel; refs: RefsResult },
 ): ConformanceEntry {
   const modelDir = dirname(file);
-  const repo = repoOverride ?? modelDir;
+  const repoValues = repoOverride === undefined ? [] : typeof repoOverride === "string" ? [repoOverride] : [...repoOverride];
+  // One bare path is the single target repository, as before; anything else is for the plan below.
+  let repo = repoValues.length === 1 ? repoValues[0] : modelDir;
   // MIL-202: independent of the state file and of git — the constitution is a per-model fact
   // every entry carries, including the early-return branches below.
   const constitution = resolveConstitution(modelDir);
@@ -438,6 +451,28 @@ export function resolveConformanceEntry(
   // GH #391: exact-stem twin first, else every same-revision findings file (the marker's revision).
   const findingsFiles = findingsFilesOf(resolveFindingsForReport(modelDir, report, revision));
   const unruledFindings = findingsFiles ? unruledAcrossFiles(findingsFiles, inScope).total : null;
+  if (compiled !== undefined) {
+    const plan = planRepoConformance({ modelFile: file, model: compiled.model, refs: compiled.refs, repoValues, recordedRevision: revision });
+    const base = { file, modelDir, hasStateFile: true, lastConformance: { date, revision, partial }, unruledFindings, repo: modelDir, constitution };
+    if (plan.mode === "error") return { ...base, commitsBehindHead: null, slicePRsBehindHead: null, error: plan.message };
+    if (plan.mode === "multi") {
+      const compared = compareRepos(plan, revision, runGit);
+      const repos = compared.map((r) => ({ repo: r.repo, revision: r.revision, commitsBehindHead: r.commitsBehindHead, error: r.error }));
+      const usable = compared.filter((r) => r.error === null);
+      if (usable.length === 0) {
+        return { ...base, commitsBehindHead: null, slicePRsBehindHead: null, error: compared[0]?.error ?? "no repository to compare", repos };
+      }
+      const scope = buildConformScope(qualifyBoundFiles(sliceDocFacts, file, plan.repos), { date: "", revision, report: "", partial: false }, qualifiedChangedPaths(compared), false, "", true);
+      return {
+        ...base,
+        commitsBehindHead: usable.reduce((n, r) => n + (r.commitsBehindHead ?? 0), 0),
+        slicePRsBehindHead: scope.candidateSlices.length,
+        error: null,
+        repos,
+      };
+    }
+    if (plan.dir !== null) repo = plan.dir;
+  }
   const commitsResult = commitsBehindHead(repo, revision, runGit);
   if (!commitsResult.ok) {
     return {
@@ -866,6 +901,11 @@ function formatConformanceCaveats(entry: ConformanceEntry): string {
   const parts: string[] = [];
   if (entry.lastConformance?.partial) parts.push("partial");
   if (entry.unruledFindings !== null && entry.unruledFindings > 0) parts.push(pluralize(entry.unruledFindings, "unruled finding"));
+  // GH #533: totals over fewer repositories than the code is in are said to be so.
+  const skipped = entry.repos?.filter((r) => r.error !== null) ?? [];
+  if (entry.repos && skipped.length > 0) {
+    parts.push(`${entry.repos.length - skipped.length} of ${entry.repos.length} repos compared — not ${skipped.map((r) => r.repo).join(", ")}`);
+  }
   return parts.length > 0 ? ` (${parts.join(", ")})` : "";
 }
 

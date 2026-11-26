@@ -127,7 +127,7 @@ describe("em conform bindings check across repositories (GH #532)", () => {
     expect(one.status).toBe(0);
     const two = em(["conform", "bindings", "check", "shop.em", "--repo", join(base, "orders")], dir);
     expect(two.status).toBe(1);
-    expect(two.stderr).toContain("these bindings are in 2 repositories (web, orders), so a bare path is ambiguous");
+    expect(two.stderr).toContain("this model's code is in 2 repositories (web, orders), so a bare path is ambiguous");
   });
 
   it("layout 2: no bindings repo: at all, a code map with one default repo, and the check finds the code repo by itself", () => {

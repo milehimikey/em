@@ -60,7 +60,10 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // roster (`ratifiers.yaml`) governs `em slice ratify --by` / `review --by` for the first input model.
 // 1.13 (GH #493): a new top-level `policy` -- one entry per input model with the effective
 // `em-policy.yaml` policy, each key as `{ value, source }` (source = the file path or "default").
-export const STATUS_SCHEMA_VERSION = "1.13";
+// 1.14 (GH #533, em 1.24.0): each `conformance[]` entry gains `repos: [{ repo, revision,
+// commitsBehindHead, error }]`, present only for a model whose code is in several repositories
+// (see ../cli/status.ts's ConformanceEntry). Absent otherwise. Additive-only.
+export const STATUS_SCHEMA_VERSION = "1.14";
 
 /** Build the `em status <files...> --json` document. Pretty-printed (2-space), no trailing
  *  newline — the caller adds it, same convention as buildCoverageJson/buildLedgerJson. No

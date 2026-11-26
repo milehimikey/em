@@ -249,7 +249,7 @@ describe("policy through the CLI", () => {
   it("em status prints the effective policy with sources (text and --json, schema 1.13)", () => {
     writeFileSync(join(dir, "em-policy.yaml"), `${V}merge: squash\nreview: pull-request\n`);
     const json = JSON.parse(em(["status", "model.em", "--json"], dir).stdout);
-    expect(json.statusSchemaVersion).toBe("1.13");
+    expect(json.statusSchemaVersion).toBe("1.14");
     expect(json.policy).toHaveLength(1);
     const p = json.policy[0];
     expect(p.file).toBe("model.em");

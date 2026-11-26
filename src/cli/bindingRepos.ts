@@ -23,7 +23,9 @@ import { loadDeclaredRepos } from "../system/systemRepos.js";
 import { findRepoRoot, parseRepoArgs, REPOS_LOCAL_FILE, resolveRepos } from "../system/repoResolver.js";
 import { BindingRepos, explicitBindingRepos, listBindingsSliceKeys } from "./bindings.js";
 
-export type BindingReposResult = { ok: true; repos: string | BindingRepos } | { ok: false; message: string };
+/** `inPlay` (several-repositories mode only): every repo id a binding or a place names, in
+ *  first-seen order — what `em conform-scope` and `em status` diff, one by one (GH #533). */
+export type BindingReposResult = { ok: true; repos: string | BindingRepos; inPlay: string[]; bare: string | null } | { ok: false; message: string };
 
 export function buildBindingRepos(input: {
   modelFile: string;
@@ -34,6 +36,12 @@ export function buildBindingRepos(input: {
   /** `--slice`, when one was given. */
   sliceKey?: string;
   cwd?: string;
+  /** GH #533: repo ids in play beyond those the bindings name — every repo the model's code map
+   *  places something in, and every repo a recorded per-repo revision covers. */
+  alsoInPlay?: readonly string[];
+  /** GH #533: several-repositories mode even when nothing above asks for it (the recorded
+   *  revision is per-repo). */
+  forceMulti?: boolean;
 }): BindingReposResult {
   const modelDir = dirname(input.modelFile);
   const args = parseRepoArgs(input.repoValues);
@@ -44,8 +52,8 @@ export function buildBindingRepos(input: {
   const explicit = explicitBindingRepos(modelDir, sliceKeys);
   const selfDir = findRepoRoot(modelDir) ?? modelDir;
 
-  if (places.kind !== "ok" && explicit.size === 0 && args.byId.size === 0) {
-    return { ok: true, repos: args.bare ?? selfDir };
+  if (places.kind !== "ok" && explicit.size === 0 && args.byId.size === 0 && input.forceMulti !== true) {
+    return { ok: true, repos: args.bare ?? selfDir, inPlay: [], bare: args.bare };
   }
 
   /** The repo of a binding that names none: the slice's one repository, or its candidates. */
@@ -61,13 +69,14 @@ export function buildBindingRepos(input: {
     const d = defaultRepo(key);
     if (typeof d === "string") inPlay.add(d);
   }
+  for (const id of input.alsoInPlay ?? []) inPlay.add(id);
 
   let bareFor: string | null = null;
   if (args.bare !== null) {
     if (inPlay.size !== 1) {
       return {
         ok: false,
-        message: `--repo ${args.bare}: these bindings are in ${inPlay.size} repositories (${[...inPlay].join(", ")}), so a bare path is ambiguous — write --repo <id>=<path>`,
+        message: `--repo ${args.bare}: this model's code is in ${inPlay.size} repositories (${[...inPlay].join(", ")}), so a bare path is ambiguous — write --repo <id>=<path>`,
       };
     }
     bareFor = [...inPlay][0];
@@ -86,6 +95,8 @@ export function buildBindingRepos(input: {
 
   return {
     ok: true,
+    inPlay: [...inPlay],
+    bare: args.bare,
     repos: {
       defaultRepo,
       dirOf(repo: string) {

@@ -18,7 +18,12 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // it's carried (not filtered out) so the two surfaces keep reporting the SAME entry.
 // 1.2 (MIL-214): `unruledFindings: number | null` and `lastConformance.partial: boolean` ride
 // along the same way — see ../cli/status.ts's ConformanceEntry.
-export const FRESHNESS_SCHEMA_VERSION = "1.2";
+// 1.3 (GH #533, em 1.24.0): `repos: [{ repo, revision, commitsBehindHead, error }]` rides along
+// the same way, present only for a model whose code is in several repositories — one entry per
+// repository, compared at the revision recorded for it. The counts above are then totals over
+// the repositories that could be compared. Absent otherwise, so a single-repository document is
+// byte-identical apart from this version.
+export const FRESHNESS_SCHEMA_VERSION = "1.3";
 
 /** Build the `em freshness <file> --json` document. Pretty-printed (2-space), no trailing
  *  newline — the caller adds it, same convention as buildStatusJson/buildCoverageJson. No

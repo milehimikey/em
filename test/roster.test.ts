@@ -141,7 +141,7 @@ describe("roster through the CLI (GH #259)", () => {
     expect(em(["slice", "ratify", "model.em", "pay", "--by", "Anyone At All"], dir).status).toBe(0);
     expect(em(["validate", "model.em", "--slice-ready", "pay"], dir).status).toBe(0);
     const status = JSON.parse(em(["status", "model.em", "--json"], dir).stdout);
-    expect(status.statusSchemaVersion).toBe("1.13");
+    expect(status.statusSchemaVersion).toBe("1.14");
     expect(status.roster).toBe("absent");
   });
 

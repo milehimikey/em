@@ -43,7 +43,7 @@ import { validateDocModelConsistency } from "./catalog/docModelConsistencyValida
 import { validateOrphanedSliceDocs } from "./catalog/orphanedSliceDocValidate.js";
 import { validateCodeMap } from "./codemap/codeMapValidate.js";
 import { loadDeclaredRepos, loadReposOfManifest } from "./system/systemRepos.js";
-import { parseRepoArgs, resolveRepos } from "./system/repoResolver.js";
+import { findRepoRoot, parseRepoArgs, resolveRepos } from "./system/repoResolver.js";
 import { buildReposCheckJson, renderReposCheckText, reposCheckOk, ReposCheckReport } from "./emit/reposCheckJson.js";
 import { validateModelVersionStale } from "./catalog/modelVersionValidate.js";
 import { validateInvariants } from "./catalog/invariantsValidate.js";
@@ -140,7 +140,8 @@ import { runRatify, parseMeaningFlags, meaningConfirmationLine, MeaningConfirmat
 import { runReview } from "./cli/review.js";
 import { runBatch, BatchInput } from "./cli/batchSign.js";
 import { certifyRuledSlices, runConformSupersede } from "./cli/conformSupersede.js";
-import { buildConformScope, changedPathsSince, resolveSliceDocFacts, seedAsisModel, SliceDocFacts } from "./cli/conformScope.js";
+import { buildConformScope, changedPathsSince, ConformScopeJson, resolveSliceDocFacts, seedAsisModel, SliceDocFacts } from "./cli/conformScope.js";
+import { buildConformScopeAcrossRepos, planRepoConformance } from "./cli/conformRepos.js";
 import { buildSliceDocContent, buildStubDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
 import { buildSliceSyncJson, formatSliceSync, runSliceSync, sliceSyncFailed } from "./cli/sliceSync.js";
 import { buildSliceRegions, GeneratedRegion } from "./catalog/sliceSections.js";
@@ -2249,10 +2250,15 @@ program
       "--seed-asis also seeds the <model>-asis.em scratch model (see docs/cli.md)",
   )
   .argument("<file>", "input .em file")
-  .requiredOption("--repo <path>", "path to (or inside) the target codebase's git repository")
+  .option(
+    "--repo <path|id=path>",
+    "path to (or inside) the target codebase's git repository (default: the model's own repository). Repeatable as <id>=<path> when the model's code is in several repositories; other repo ids resolve through .em/repos.local.yaml, then a sibling directory named after the id",
+    (value: string, previous: string[]) => [...previous, value],
+    [] as string[],
+  )
   .option("--full", "ignore Last conformance:/changed paths; scope every implemented slice")
   .option("--seed-asis", "write <model>-asis.em as a byte copy of the canonical model and ensure it's gitignored")
-  .action((file: string, opts: { repo: string; full?: boolean; seedAsis?: boolean }) => {
+  .action((file: string, opts: { repo: string[]; full?: boolean; seedAsis?: boolean }) => {
     const { model, diagnostics, refs } = compileFile(file);
     printDiagnostics(diagnostics);
     if (hasErrors(diagnostics)) {
@@ -2282,20 +2288,30 @@ program
     const { facts, diagnostics: docDiags } = resolveSliceDocFacts(model, refs, dirname(file));
     printDiagnostics(newDiagnostics(docDiags, diagnostics));
 
-    const skipGit = !!opts.full || lastConformance === null;
-    let changedPaths: string[] = [];
-    let boundPrefix = "";
-    if (!skipGit) {
-      const result = changedPathsSince(opts.repo, lastConformance!.revision);
-      if (!result.ok) {
-        console.error(result.message);
-        process.exit(1);
-      }
-      changedPaths = result.paths;
-      boundPrefix = result.boundPrefix;
+    // GH #533: one repository (as always), or one comparison per repository the code is in.
+    const plan = planRepoConformance({ modelFile: file, model, refs, repoValues: opts.repo, recordedRevision: lastConformance?.revision ?? null });
+    if (plan.mode === "error") {
+      console.error(`em conform-scope: ${plan.message}`);
+      process.exit(1);
     }
-
-    const scope = buildConformScope(facts, lastConformance, changedPaths, !!opts.full, boundPrefix);
+    let scope: ConformScopeJson;
+    if (plan.mode === "multi") {
+      scope = buildConformScopeAcrossRepos(facts, lastConformance, !!opts.full, plan, file);
+    } else {
+      const skipGit = !!opts.full || lastConformance === null;
+      let changedPaths: string[] = [];
+      let boundPrefix = "";
+      if (!skipGit) {
+        const result = changedPathsSince(plan.dir ?? findRepoRoot(dirname(file)) ?? dirname(file), lastConformance!.revision);
+        if (!result.ok) {
+          console.error(result.message);
+          process.exit(1);
+        }
+        changedPaths = result.paths;
+        boundPrefix = result.boundPrefix;
+      }
+      scope = buildConformScope(facts, lastConformance, changedPaths, !!opts.full, boundPrefix);
+    }
     const output: Record<string, unknown> = { ...scope };
     if (stateFileMismatch) {
       output.stateFile = { error: stateFileMismatch };
@@ -3322,7 +3338,12 @@ program
   )
   .argument("<files...>", "input .em files")
   .option("--tests <dir>", "directory to scan for INV-* test citations — enables invariant coverage totals")
-  .option("--repo <path>", "git repo to compute commits-behind-HEAD in (default: each model's own directory)")
+  .option(
+    "--repo <path|id=path>",
+    "git repo to compute commits-behind-HEAD in (default: each model's own directory). Repeatable as <id>=<path> for a model whose code is in several repositories; other repo ids resolve through .em/repos.local.yaml, then a sibling directory",
+    (value: string, previous: string[]) => [...previous, value],
+    [] as string[],
+  )
   .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
   .option("--md", "print a markdown block suited for README embedding")
   .option("--badge", "print a generated SVG badge")
@@ -3330,7 +3351,7 @@ program
   .action(
     (
       files: string[],
-      opts: { tests?: string; repo?: string; json?: boolean; md?: boolean; badge?: boolean; out?: string },
+      opts: { tests?: string; repo: string[]; json?: boolean; md?: boolean; badge?: boolean; out?: string },
     ) => {
       const modesSelected = [opts.json, opts.md, opts.badge].filter(Boolean).length;
       if (modesSelected > 1) {
@@ -3405,10 +3426,10 @@ program
 
       // MIL-164: slice-PRs-behind-HEAD is scoped per model — THIS model's own facts, not the
       // merged `sliceFacts` above (which spans every input file when several are given).
-      const conformance = compiled.map(({ file }) => {
+      const conformance = compiled.map(({ file, model, refs }) => {
         const facts = factsByFile.get(file) ?? [];
         const sliceDocFacts: SliceDocFacts[] = facts.map((f) => ({ key: f.key, status: f.rawStatus, implementedIn: f.implementedIn, shipped: f.shipped, file: f.sliceFile, boundFiles: f.boundFiles }));
-        return resolveConformanceEntry(file, opts.repo, sliceDocFacts);
+        return resolveConformanceEntry(file, opts.repo, sliceDocFacts, undefined, { model, refs });
       });
       // MIL-218: one model-version entry per input file.
       const modelVersion = compiled.map(({ file, model, refs, hashSource }) => resolveModelVersionStatusEntry(file, model, refs, hashSource));
@@ -3445,9 +3466,14 @@ program
       "full state-of-the-system rollup (see docs/cli.md)",
   )
   .argument("<file>", "input .em file")
-  .option("--repo <path>", "git repo to compute behind-HEAD in (default: the model's own directory)")
+  .option(
+    "--repo <path|id=path>",
+    "git repo to compute behind-HEAD in (default: the model's own directory). Repeatable as <id>=<path> for a model whose code is in several repositories; other repo ids resolve through .em/repos.local.yaml, then a sibling directory",
+    (value: string, previous: string[]) => [...previous, value],
+    [] as string[],
+  )
   .option("--json", "print a JSON document instead of the text line")
-  .action((file: string, opts: { repo?: string; json?: boolean }) => {
+  .action((file: string, opts: { repo: string[]; json?: boolean }) => {
     const { model, refs, diagnostics } = compileFile(file);
     printDiagnostics(diagnostics);
     if (hasErrors(diagnostics)) {
@@ -3459,7 +3485,7 @@ program
     const { facts, diagnostics: docDiags } = resolveSliceDocFacts(model, refs, baseDir);
     printDiagnostics(docDiags);
 
-    const entry = resolveConformanceEntry(file, opts.repo, facts);
+    const entry = resolveConformanceEntry(file, opts.repo, facts, undefined, { model, refs });
 
     if (opts.json) {
       process.stdout.write(buildFreshnessJson(entry) + "\n");

@@ -416,6 +416,31 @@ export function boundFilesForSlice(modelDir: string, sliceKey: string): string[]
   return [...files];
 }
 
+/** GH #533: one slice's bound files with the repo each names (`undefined` when the binding
+ *  names none), file paths posix with no leading `./`, each (repo, file) pair once. `[]` when
+ *  the slice has no manifest or it is malformed — same posture as `boundFilesForSlice`. */
+export function boundSitesForSlice(modelDir: string, sliceKey: string): { repo: string | undefined; file: string }[] {
+  let text: string;
+  try {
+    text = readFileSync(join(modelDir, bindingsFilePath(sliceKey)), "utf8");
+  } catch {
+    return [];
+  }
+  const parsed = parseBindingsFile(text, sliceKey);
+  if (!parsed.ok) return [];
+  const out: { repo: string | undefined; file: string }[] = [];
+  const add = (site: BindingSite): void => {
+    const file = site.file.trim().replace(/\\/g, "/").replace(/^(\.\/)+/, "");
+    if (file && !out.some((s) => s.repo === site.repo && s.file === file)) out.push({ repo: site.repo, file });
+  };
+  for (const el of parsed.doc.elements) add(el);
+  for (const inv of parsed.doc.invariants) {
+    add(inv.enforcedIn);
+    add(inv.testedIn);
+  }
+  return out;
+}
+
 /** GH #532: every repo id the bindings files of `sliceKeys` name explicitly (`repo:` on an
  *  element or an invariant site). Unreadable or malformed files name none. */
 export function explicitBindingRepos(modelDir: string, sliceKeys: readonly string[]): Set<string> {

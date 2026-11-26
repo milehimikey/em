@@ -77,6 +77,7 @@ export interface CandidateSlice {
  *  parsed from the state file even under `--full` — the caller always knows what was on record,
  *  even when scoping ignored it for this run. */
 export interface ConformScopeJson {
+  /** GH #533: `revision` is a per-repo value (`<repo>=<rev>,…`) for code in several repositories. */
   lastConformance: { date: string; revision: string; partial: boolean } | null;
   changedPaths: string[];
   candidateSlices: CandidateSlice[];
@@ -98,11 +99,14 @@ function pathCandidate(implementedIn: string): string | null {
 /** The changed paths one slice's `implementedIn` textually, deterministically names: equal to
  *  the candidate path, or nested under it (the candidate names a directory). No fuzzy matching,
  *  no grep — that judgment call stays with the agent (reference/conform.md step 1). */
-export function matchImplementedInToPaths(implementedIn: string | null, changedPaths: string[]): string[] {
+export function matchImplementedInToPaths(implementedIn: string | null, changedPaths: string[], qualified = false): string[] {
   if (!implementedIn) return [];
   const candidate = pathCandidate(implementedIn);
   if (!candidate) return [];
-  return changedPaths.filter((p) => p === candidate || p.startsWith(`${candidate}/`));
+  // GH #533: `<repo>:<path>` entries (several repositories) are matched on their path part — an
+  // `implementedIn:` path never said which repository it is in.
+  const pathOf = (p: string): string => (qualified ? p.slice(p.indexOf(":") + 1) : p);
+  return changedPaths.filter((p) => pathOf(p) === candidate || pathOf(p).startsWith(`${candidate}/`));
 }
 
 /**
@@ -119,6 +123,8 @@ export function buildConformScope(
   changedPaths: string[],
   full: boolean,
   boundPrefix = "",
+  /** GH #533: `changedPaths` and every `boundFiles` entry are `<repo>:<path>`. */
+  qualified = false,
 ): ConformScopeJson {
   const lastConformanceOut = lastConformance
     ? { date: lastConformance.date, revision: lastConformance.revision, partial: lastConformance.partial }
@@ -134,7 +140,7 @@ export function buildConformScope(
   const matched = new Set<string>();
   const candidateSlices: CandidateSlice[] = [];
   for (const s of slices) {
-    const byLink = matchImplementedInToPaths(s.implementedIn, changedPaths);
+    const byLink = matchImplementedInToPaths(s.implementedIn, changedPaths, qualified);
     const bound = new Set((s.boundFiles ?? []).map((f) => (boundPrefix === "" ? f : `${boundPrefix}/${f}`)));
     // Both sources count; `paths` keeps `changedPaths` order, each path once.
     const paths = bound.size === 0 ? byLink : changedPaths.filter((p) => byLink.includes(p) || bound.has(p));

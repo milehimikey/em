@@ -84,7 +84,9 @@ import { buildGlossary, detectKindConflicts, detectFieldTypeConflicts, applyGlos
 import { buildGlossaryJson, GlossaryFileSide } from "../emit/glossaryJson.js";
 import { changelogBaseline, listModelCommits } from "../cli/changelog-git.js";
 import { buildChangelogDoc } from "../cli/changelogBuild.js";
-import { buildConformScope, changedPathsSince, resolveSliceDocFacts, SliceDocFacts } from "../cli/conformScope.js";
+import { buildConformScope, changedPathsSince, ConformScopeJson, resolveSliceDocFacts, SliceDocFacts } from "../cli/conformScope.js";
+import { buildConformScopeAcrossRepos, planRepoConformance } from "../cli/conformRepos.js";
+import { findRepoRoot } from "../system/repoResolver.js";
 import { loadStateFile, parseState, modelPathMismatch } from "../cli/stateFile.js";
 import { buildFreshnessJson } from "../emit/freshnessJson.js";
 import { computeMetrics } from "../cli/metrics.js";
@@ -623,10 +625,10 @@ export function createServer(): McpServer {
 
       // MIL-164: slice-PRs-behind-HEAD is scoped per model — THIS model's own facts, not the
       // merged `sliceFacts` above (which spans every input file when several are given).
-      const conformance = compiledFiles.map(({ file }) => {
+      const conformance = compiledFiles.map(({ file, compiled }) => {
         const facts = factsByFile.get(file) ?? [];
         const sliceDocFacts: SliceDocFacts[] = facts.map((f) => ({ key: f.key, status: f.rawStatus, implementedIn: f.implementedIn, shipped: f.shipped, file: f.sliceFile, boundFiles: f.boundFiles }));
-        return resolveConformanceEntry(file, repo, sliceDocFacts);
+        return resolveConformanceEntry(file, repo === undefined ? [] : [repo], sliceDocFacts, undefined, { model: compiled.model, refs: compiled.refs });
       });
       // MIL-218: one model-version entry per input file — same computation cli.ts's `status`
       // action makes, for MCP parity.
@@ -845,14 +847,18 @@ export function createServer(): McpServer {
         "file to disk), this tool never writes anything — use the CLI directly for that step.",
       inputSchema: {
         file: z.string().describe("input .em model file"),
-        repo: z.string().describe("path to (or inside) the target codebase's git repository"),
+        repo: z.string().optional().describe("path to (or inside) the target codebase's git repository (default: the model's own repository)"),
+        repos: z
+          .array(z.string())
+          .optional()
+          .describe("`<id>=<path>` entries mapping a repo id to a checkout, for a model whose code is in several repositories (same as the CLI's repeatable --repo)"),
         full: z
           .boolean()
           .default(false)
           .describe("ignore Last conformance:/changed paths; scope every status: implemented slice"),
       },
     },
-    async ({ file, repo, full }) => {
+    async ({ file, repo, repos, full }) => {
       const compiled = compileFile(file);
       if ("error" in compiled) return errorResult(compiled.error);
       if (hasErrors(compiled.diagnostics)) {
@@ -871,17 +877,24 @@ export function createServer(): McpServer {
 
       const { facts } = resolveSliceDocFacts(model, refs, dirname(file));
 
-      const skipGit = full || lastConformance === null;
-      let changedPaths: string[] = [];
-      let boundPrefix = "";
-      if (!skipGit) {
-        const result = changedPathsSince(repo, lastConformance!.revision);
-        if (!result.ok) return errorResult(result.message);
-        changedPaths = result.paths;
-        boundPrefix = result.boundPrefix;
+      // GH #533: one repository (as always), or one comparison per repository the code is in.
+      const plan = planRepoConformance({ modelFile: file, model, refs, repoValues: [...(repo === undefined ? [] : [repo]), ...(repos ?? [])], recordedRevision: lastConformance?.revision ?? null });
+      if (plan.mode === "error") return errorResult(`conform_scope: ${plan.message}`);
+      let scope: ConformScopeJson;
+      if (plan.mode === "multi") {
+        scope = buildConformScopeAcrossRepos(facts, lastConformance, full, plan, file);
+      } else {
+        const skipGit = full || lastConformance === null;
+        let changedPaths: string[] = [];
+        let boundPrefix = "";
+        if (!skipGit) {
+          const result = changedPathsSince(plan.dir ?? findRepoRoot(dirname(file)) ?? dirname(file), lastConformance!.revision);
+          if (!result.ok) return errorResult(result.message);
+          changedPaths = result.paths;
+          boundPrefix = result.boundPrefix;
+        }
+        scope = buildConformScope(facts, lastConformance, changedPaths, full, boundPrefix);
       }
-
-      const scope = buildConformScope(facts, lastConformance, changedPaths, full, boundPrefix);
       const output: Record<string, unknown> = { ...scope };
       if (stateFileMismatch) {
         output.stateFile = { error: stateFileMismatch };
@@ -902,9 +915,13 @@ export function createServer(): McpServer {
       inputSchema: {
         file: fileParam,
         repo: z.string().optional().describe("git repo to compute behind-HEAD in (default: the model's own directory)"),
+        repos: z
+          .array(z.string())
+          .optional()
+          .describe("`<id>=<path>` entries mapping a repo id to a checkout, for a model whose code is in several repositories (same as the CLI's repeatable --repo)"),
       },
     },
-    async ({ file, repo }) => {
+    async ({ file, repo, repos }) => {
       const compiled = compileFile(file);
       if ("error" in compiled) return errorResult(compiled.error);
       if (hasErrors(compiled.diagnostics)) {
@@ -913,7 +930,7 @@ export function createServer(): McpServer {
       const { model, refs } = compiled;
       const baseDir = dirname(file);
       const { facts } = resolveSliceDocFacts(model, refs, baseDir);
-      const entry = resolveConformanceEntry(file, repo, facts);
+      const entry = resolveConformanceEntry(file, [...(repo === undefined ? [] : [repo]), ...(repos ?? [])], facts, undefined, { model, refs });
       return textResult(buildFreshnessJson(entry));
     },
   );
