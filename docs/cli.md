@@ -5359,7 +5359,7 @@ check is language-agnostic by construction, the same posture `em refs --reachabl
 
 | Flag | Effect |
 |---|---|
-| `--repo <path>` | Required. Bound `file`s resolve relative to this path — it does not need to be a git repository; this check never shells out to git |
+| `--repo <path>` | The target codebase: bound `file`s resolve relative to this path. It does not need to be a git repository; this check never shells out to git. Optional since 1.24.0: without it, the model's own repository. Repeatable as `--repo <id>=<path>` when the bindings span repositories (below) |
 | `--slice <key>` | Check only this slice's bindings file (default: every `conformance/bindings/*.yaml` beside the model, sorted) |
 | `--json` | Print a JSON document instead of the text report |
 | `--exit-code` | Exit 1 if any binding failed (git-diff convention) — the opt-in CI gate. Without it, this command **always exits 0**: it is advisory only, never wired into `em validate` or `--slice-ready`, and a failing binding alone must never fail a build that didn't ask for the gate |
@@ -5391,7 +5391,37 @@ em conform bindings check checkout.em --repo ../checkout-service --slice place-o
 em conform bindings check checkout.em --repo ../checkout-service --json
 ```
 
-`--json` shape (`bindingsCheckSchemaVersion` `"1.0"`): `{ bindingsCheckSchemaVersion, slice,
+**Across repositories** (since 1.24.0, GH #532). When a slice's code is in more than one
+repository, each binding is looked for in the checkout of its own repo. That happens when the
+model has a [`code-map.yaml`](code-map-schema.md), when a bindings file names a `repo:`
+([bindings.md](bindings.md), schema 1.1), or when `--repo <id>=<path>` is given. Otherwise the
+command behaves exactly as before.
+
+- A binding's repo is its own `repo:`, or, when it names none, the slice's one repository from
+  the code map. A binding with no `repo:` in a slice whose code is in several repositories fails
+  with that reason: add `repo:`.
+- A repo id resolves as [`em repos check`](#em-repos-check-target) reports it:
+  `--repo <id>=<path>`, then `.em/repos.local.yaml`, then a sibling directory named after the
+  id. `self` is the model's own repository. So with the repositories checked out side by side,
+  no flag is needed.
+- A bare `--repo <path>` still works when the bindings being checked are all in one repo, and
+  names it. With two or more it is refused (exit 1) in favour of `--repo <id>=<path>`.
+- A repo with no checkout on this machine is not fetched. Its bindings fail with
+  `repo "<id>" has no checkout here`, and the rest are still checked. An id that is not declared
+  under `repos:` fails as undeclared.
+- The text report shows each site as `<repo>:<file>`.
+
+```bash
+em conform bindings check checkout.em                                  # repos side by side
+em conform bindings check checkout.em --repo storefront-web=../web --repo checkout-svc=/src/co
+```
+
+`--json` shape (`bindingsCheckSchemaVersion` `"1.1"`; on a check across repositories every
+element and every invariant site also carries `repo` — the repo id its file was looked for in,
+or `null` when the binding names none and the slice's code is in several — and `repoResolved`,
+`false` when that repo has no checkout here or is undeclared, in which case the file was not
+looked for; both keys are absent on a single-repository check, whose document is 1.0's apart
+from the version): `{ bindingsCheckSchemaVersion, slice,
 ok, files: [{ path, slice, kind, ok, errors, elements: [{ ref, file, identifier, note,
 knownRef, fileExists, identifierFound, ok }], invariants: [{ id, enforcedIn: { file,
 identifier, fileExists, identifierFound, ok }, testedIn: { ... }, ok }] }], summary: {
