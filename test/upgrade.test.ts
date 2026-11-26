@@ -1305,7 +1305,7 @@ describe("api-contract-missing step - pre-1.12 workflow, multi-model, blocked (G
 
 describe("GH #346 - ci preset pull_request paths", () => {
   const CLEAN_SOURCE = 'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order\n  event Order Placed\n}\n';
-  const NEW = [".github/workflows/em-*.yml", "**/.event-modeling.md", ".claude/settings.json", "**/ratifiers.yaml", "**/em-policy.yaml", "**/system.yaml", "**/contracts/**"];
+  const NEW = [".github/workflows/em-*.yml", "**/.event-modeling.md", ".claude/settings.json", "**/ratifiers.yaml", "**/em-policy.yaml", "**/system.yaml", "**/contracts/**", "**/code-map.yaml"];
   const legacyOf = (content: string): string => {
     // what 1.18.1 generated: three-entry filter (the header is outside the managed block)
     let out = content;
@@ -1349,7 +1349,7 @@ describe("GH #346 - ci preset pull_request paths", () => {
 
 describe("GH #346 round 2 - opt-out, reasons, hand-edited filter, --check parity, multi-model", () => {
   const CLEAN_SOURCE = 'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order\n  event Order Placed\n}\n';
-  const EXTRA = [".github/workflows/em-*.yml", "**/.event-modeling.md", ".claude/settings.json", "**/ratifiers.yaml", "**/em-policy.yaml", "**/system.yaml", "**/contracts/**"];
+  const EXTRA = [".github/workflows/em-*.yml", "**/.event-modeling.md", ".claude/settings.json", "**/ratifiers.yaml", "**/em-policy.yaml", "**/system.yaml", "**/contracts/**", "**/code-map.yaml"];
   const legacyOf = (content: string): string => {
     let out = content;
     for (const p of EXTRA) out = out.replace(`      - "${p}"\n`, "");
@@ -1431,7 +1431,7 @@ describe("GH #346 round 2 - opt-out, reasons, hand-edited filter, --check parity
 
 describe("GH #346 round 3 - em ci init applies the filter refresh; comment-tolerant parsing", () => {
   const CLEAN_SOURCE = 'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order\n  event Order Placed\n}\n';
-  const EXTRA = [".github/workflows/em-*.yml", "**/.event-modeling.md", ".claude/settings.json", "**/ratifiers.yaml", "**/em-policy.yaml", "**/system.yaml", "**/contracts/**"];
+  const EXTRA = [".github/workflows/em-*.yml", "**/.event-modeling.md", ".claude/settings.json", "**/ratifiers.yaml", "**/em-policy.yaml", "**/system.yaml", "**/contracts/**", "**/code-map.yaml"];
   const legacyOf = (content: string): string => {
     let out = content;
     for (const p of EXTRA) out = out.replace(`      - "${p}"\n`, "");

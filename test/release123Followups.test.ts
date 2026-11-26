@@ -79,12 +79,23 @@ describe("em validate reports an invalid em-policy.yaml", () => {
   });
 });
 
+describe("CI path filter watches code-map.yaml (1.24.0)", () => {
+  const block = (paths: readonly string[]) => `on:\n  pull_request:\n    paths:\n${paths.map((p) => `      - "${p}"`).join("\n")}\n  push:\n    branches: [main]\n`;
+  it("is in the generated list, and the list 1.23 generated is refreshed to it", () => {
+    expect(CI_PR_PATHS).toContain("**/code-map.yaml");
+    const from123 = CI_PR_PATHS.filter((p) => p !== "**/code-map.yaml");
+    expect(refreshCiPullRequestPaths(block(from123))).toBe(block(CI_PR_PATHS));
+    expect(missingCiPullRequestPaths(block(from123))).toEqual(["**/code-map.yaml"]);
+  });
+});
+
 describe("CI path filter watches em-policy.yaml", () => {
   const block = (paths: readonly string[]) => `on:\n  pull_request:\n    paths:\n${paths.map((p) => `      - "${p}"`).join("\n")}\n  push:\n    branches: [main]\n`;
 
   it("the preset lists it, and the 1.19-1.22 generated list is refreshed", () => {
     expect(CI_PR_PATHS).toContain("**/em-policy.yaml");
-    const earlier = CI_PR_PATHS.filter((p) => p !== "**/em-policy.yaml");
+    // The list 1.19-1.22 generated: no em-policy.yaml, and no code-map.yaml (1.24.0 added it).
+    const earlier = CI_PR_PATHS.filter((p) => p !== "**/em-policy.yaml" && p !== "**/code-map.yaml");
     const refreshed = refreshCiPullRequestPaths(block(earlier));
     expect(refreshed).toBe(block(CI_PR_PATHS));
     expect(refreshCiPullRequestPaths(block(CI_PR_PATHS.slice(0, 3)))).toBe(block(CI_PR_PATHS));
