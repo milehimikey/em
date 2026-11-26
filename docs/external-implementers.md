@@ -105,6 +105,45 @@ disposable per-PR environment with no durable commit at all. A kinded `<kind>:<i
 `build:<id>`, `deploy:<id>` — records what was actually exercised without claiming a git revision
 that won't stay reachable (GH #261).
 
+## When the code is in another repository
+
+Since 1.24.0. Steps 1 to 5 assume the agent's PR lands in the model's repository: the bindings
+file is committed there, and `em validate` and the bindings check run on that PR. When the model
+has a [`code-map.yaml`](code-map-schema.md), the code is somewhere else, possibly in two places
+for one slice. The loop keeps its shape; three things move.
+
+**One brief per work unit, one ticket per brief.** `em engagement brief` emits one brief per
+slice × repository (`--slice <key> --unit <repo>` for exactly one). Each names the unit's
+elements, its repository and roots, the slice's other units as context, and the line the PR body
+must carry (`Em-Unit: <modelKey>:<key>@<repo>`). A slice in two repositories is two tickets, for
+two agents or two teams.
+
+**The agent hands its binding entries back; it does not commit a bindings file.** The file lives
+in the model's repository, which the agent's PR is not in. The brief's definition of done asks
+for the completed entries, each with `repo:`, in the PR description.
+
+**The slice gets a closing step, in the model's repository.** Once every unit's PR has merged:
+
+```bash
+# 1. conformance/bindings/place-order.yaml, bindingsSchemaVersion "1.1", from the handed-back entries
+em conform bindings check checkout.em --slice place-order --exit-code   # 2. against the merged code
+em slice mark-implemented checkout.em place-order https://github.com/acme/storefront-web/pull/12 --unit storefront-web
+em slice mark-implemented checkout.em place-order https://github.com/acme/checkout-svc/pull/31 --unit checkout-svc
+em engagement set checkout.em demo place-order --unit storefront-web --state merged    # as each one merges
+em engagement set checkout.em demo place-order --unit checkout-svc --state merged
+```
+
+The doc flips to `implemented` on the last `mark-implemented`, and the Ledger reads the slice
+`merged` only when both units are. Commit the bindings file and the doc on a branch of the
+model's repository and merge it. That PR is where step 3's gates run for the slice:
+`em validate` and the bindings check need the model, and a code repository has none.
+
+**What does not run on the agent's PR.** In a code repository with no model there is nothing for
+`em validate` or `em api check` to read, so step 3's first two gates do not apply there. The
+agent's PR is gated by that repository's own build and tests. Wiring a code repository's CI to
+check out the model's repository and run the bindings check for its units is not part of this
+release.
+
 ## Why conform is the only spec-fidelity check here
 
 In the engagement loop (`em engagement` + the `event-modeling-engagement` skill), four sub-agents
