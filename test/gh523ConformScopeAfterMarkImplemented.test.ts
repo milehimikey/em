@@ -14,7 +14,8 @@ import { fileURLToPath } from "node:url";
 import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
 import { rmTemp } from "./helpers/rmTemp.js";
 
-vi.setConfig({ testTimeout: 30_000 });
+// beforeAll spawns the CLI six times; a CI runner needs more than the 10s hook default.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 60_000 });
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TSX = join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
