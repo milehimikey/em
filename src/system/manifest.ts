@@ -41,6 +41,9 @@ export const SELF_REPO_ID = "self";
 /** A repo id: what a repository directory can be named, so the id can double as the sibling
  *  directory the resolver falls back to. Starts with a letter or digit, which also rules out
  *  `.`/`..` and a leading `-`. */
+/** Reserved beside `self`: a slice's closing step is marked `Em-Unit: <model>:<slice>@close`,
+ *  which a repository with this id would collide with. */
+export const CLOSE_NODE_ID = "close";
 export const REPO_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 export function isRepoId(id: string): boolean {
   return REPO_ID_RE.test(id);
@@ -293,6 +296,10 @@ export function parseManifest(text: string): ParseManifestResult {
         }
         if (id === SELF_REPO_ID) {
           invalid(`repo id "${SELF_REPO_ID}" is reserved for the repo the model lives in — it is never declared in \`repos:\``, line);
+          continue;
+        }
+        if (id.toLowerCase() === CLOSE_NODE_ID) {
+          invalid(`repo id "${id}" is reserved: \`<slice>@${CLOSE_NODE_ID}\` names a slice's closing step in a pull request marker`, line);
           continue;
         }
         const clash = seen.get(id.toLowerCase());

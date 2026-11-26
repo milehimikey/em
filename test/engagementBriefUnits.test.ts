@@ -96,6 +96,18 @@ describe("em engagement brief per work unit (GH #538)", () => {
     ]);
   });
 
+  it("a slice none of whose elements is placed has no brief, and the command says why instead of printing nothing", () => {
+    p.setCodeMap(`codeMapSchemaVersion: "1.0"\npersonas:\n  Customer: {repo: web}\n`);
+    try {
+      const r = brief("--slice", "take-payment");
+      expect(r.status).toBe(1);
+      expect(r.stdout).toBe("");
+      expect(r.stderr).toContain('slice "take-payment" has no work unit — code-map.yaml places none of its elements');
+    } finally {
+      p.setCodeMap(MAP);
+    }
+  });
+
   it("--unit: no such unit is refused; with no code map it is refused too", () => {
     const none = brief("--slice", "open-orders", "--unit", "web");
     expect(none.status).toBe(1);

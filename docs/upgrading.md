@@ -748,7 +748,7 @@ Every schema change is additive. Versions that moved, and the two that are new:
 
 Three values are written in a new form when code is in several repositories, in a slot that
 already existed, so no field was added: a conformance revision (`<repo>=<rev>,…` in
-`Last conformance:`, `Certified:`, `conformedAt:`), and `implementedIn:` (`<repo>=<url>,…`).
+`Last conformance:`, `Certified:`, `conformedAt:`), and `implementedIn:` (`<repo>=<url>,…`). One frontmatter key is new: `implementedInPending:`, which holds a multi-repository slice's unit links until the last one is recorded.
 `em conform-scope`'s JSON, which has no version field, gains `matchedBy: "bindings"`, writes
 paths as `<repo>:<path>` across repositories, and adds `repos`.
 

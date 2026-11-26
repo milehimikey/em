@@ -122,12 +122,68 @@ describe("the Ledger per work unit (GH #537)", () => {
     expect(status.slices.find((s: { key: string }) => s.key === "open-orders").units).toBeUndefined();
   });
 
+  it("a PR URL with $& in it is written literally", () => {
+    const url = "https://github.com/acme/orders/pull/9?q=$&x=$1";
+    expect(set("take-payment", "--state", "review", "--pr", url).status).toBe(0);
+    expect(text()).toContain(`  - {key: take-payment, state: review, branch: null, base: null, pr: ${JSON.stringify(url)}}`);
+    const parsed = parseEngagementFile(text());
+    expect(parsed.ok && parsed.file.slices.find((s) => s.key === "take-payment")!.pr).toBe(url);
+  });
+
+  it("the code map moves a slice's code after units were recorded: the old record is kept, settable, and no longer holds the slice", () => {
+    // cancel-order has units web (held, above) and orders. Move the Customer screens to payments.
+    p.setCodeMap(`codeMapSchemaVersion: "1.0"\ndefault: {repo: orders}\npersonas:\n  Customer: {repo: payments}\n`);
+    expect(set("cancel-order", "--unit", "orders", "--state", "merged").status).toBe(0);
+    let entry = (parseEngagementFile(text()) as any).file.slices.find((s: any) => s.key === "cancel-order");
+    // payments joined as planned; web is kept as a record but the slice follows orders + payments.
+    expect(entry.units.map((u: any) => [u.repo, u.state])).toEqual([["payments", "planned"], ["orders", "merged"], ["web", "held"]]);
+    expect(entry.state).toBe("planned");
+    expect(set("cancel-order", "--unit", "payments", "--state", "merged").status).toBe(0);
+    entry = (parseEngagementFile(text()) as any).file.slices.find((s: any) => s.key === "cancel-order");
+    expect(entry.state).toBe("merged");
+    // The stale unit can still be settled by name.
+    expect(set("cancel-order", "--unit", "web", "--state", "gap").status).toBe(0);
+    p.setCodeMap(MAP);
+  });
+
+  it("the code map collapses a recorded slice to one repo: its unit records are kept and a merged unit stays merged", () => {
+    p.setCodeMap(`codeMapSchemaVersion: "1.0"\ndefault: {repo: orders}\n`);
+    try {
+      // place-order has units web and orders, both merged. It is still recorded per unit.
+      const bare = set("place-order", "--state", "building");
+      expect(bare.status).toBe(1);
+      expect(bare.stderr).toContain('slice "place-order" has 2 work units (web, orders) — record each with --unit <repo>');
+      const back = set("place-order", "--unit", "orders", "--state", "building");
+      expect(back.status).toBe(1);
+      expect(back.stderr).toContain('unit "place-order@orders" is merged — merged is terminal');
+      const entry = (parseEngagementFile(text()) as any).file.slices.find((s: any) => s.key === "place-order");
+      const byRepo = Object.fromEntries(entry.units.map((u: any) => [u.repo, [u.state, u.pr !== null]]));
+      expect(byRepo).toEqual({ orders: ["merged", true], web: ["merged", true] });
+    } finally {
+      p.setCodeMap(MAP);
+    }
+  });
+
+  it("a repo id YAML would misread is quoted, and round-trips", () => {
+    const line = formatSliceEntryLine({ key: "k", state: "planned", branch: null, base: null, pr: null, units: [
+      { repo: "null", state: "planned", branch: null, base: null, pr: null },
+      { repo: "1e3", state: "merged", branch: null, base: null, pr: null },
+      { repo: "Web.App_2", state: "review", branch: null, base: null, pr: null },
+    ] });
+    expect(line).toContain('{repo: "null", state: planned');
+    expect(line).toContain('{repo: "1e3", state: merged');
+    expect(line).toContain("{repo: Web.App_2, state: review");
+    const parsed = parseEngagementFile(`---\nengagementSchemaVersion: "1.4"\nslug: s\nmodel: "../a.em"\nstatus: open\nparallel: 1\nslices:\n${line}\n---\n`);
+    expect(parsed.ok && parsed.file.slices[0].units!.map((u) => u.repo)).toEqual(["null", "1e3", "Web.App_2"]);
+  });
+
   it("no code map: --unit is refused, and nothing about the file changes shape", () => {
     rmSync(join(p.modelDir, "code-map.yaml"));
     const r = set("take-payment", "--unit", "orders", "--state", "building");
     expect(r.status).toBe(1);
     expect(r.stderr).toContain('the model has no code-map.yaml, so slice "take-payment" is one unit — drop --unit');
     expect(set("take-payment", "--state", "building").status).toBe(0);
-    expect(text()).toContain("  - {key: take-payment, state: building, branch: null, base: null, pr: null}");
+    // One line, no units: (the PR URL is the one recorded earlier in this suite).
+    expect(text()).toMatch(/^  - \{key: take-payment, state: building, branch: null, base: null, pr: "[^"]+"\}$/m);
   });
 });

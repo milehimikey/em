@@ -3528,7 +3528,8 @@ models:
   be called, so the id can be the directory name of a checkout. Two ids may not differ only by
   case.
 - **`self` is reserved.** It always means the repository the model itself lives in, and is never
-  declared in `repos:`.
+  declared in `repos:`. `close` (any case) is reserved too: a slice's closing step is marked
+  `Em-Unit: <model>:<slice>@close` in its pull request.
 - **`remote`** is required: the clone URL or `git@host:owner/repo.git` address, one string with
   no whitespace. It is recorded, never fetched. `em` does not clone, pull or push.
 - **No local paths.** Where a repository is checked out on one machine is not a fact about the
@@ -4853,8 +4854,13 @@ em slice mark-implemented model.em place-order https://github.com/acme/checkout-
 
 - `--unit` names the unit by repo id, as the plan's `units[].repo` does.
 - **Until the last unit is recorded** the doc keeps `status: ready-to-implement`, no shipped
-  record is written, and `implementedIn:` holds the list so far. A slice is never recorded as
-  shipped on half its code.
+  record is written, and the list so far is held in its own frontmatter key,
+  `implementedInPending:`. A slice is never recorded as shipped on half its code. The call that
+  completes the set removes that key and writes `implementedIn:`.
+- **`implementedIn:` is not touched until then.** For a shipped slice whose next version is
+  being built it still names the previous version's pull requests, as it always has; the new
+  version's links collect in `implementedInPending:` and replace it at the flip. So the next
+  version is recorded afresh, and can never ship on the old links.
 - **`implementedIn:` then holds one link per unit**, as `<repo>=<url>` pairs, comma-separated,
   no spaces, in repo-id order:
   `implementedIn: checkout-svc=https://…/pull/31,storefront-web=https://…/pull/12`. A URL may
@@ -5818,7 +5824,8 @@ checkout-svc=4f2a9c1,storefront-web=b81d0e7
   `em slice conform --at`, `em conform-supersede --as-of`, a findings file's `revision`, and the
   report's `Target repo: … @ \`<revision>\`` line.
 - The three commands refuse a value with `=` that is malformed or not in id order, and print the
-  canonical spelling. That is what keeps the findings gate working: it pairs a report with the
+  canonical spelling. A kinded identifier (`build:run=42`, GH #261) is not a revision list, and
+  may contain `=`. That is what keeps the findings gate working: it pairs a report with the
   findings "at the same revision" by comparing the strings, so every file of one run must spell
   the set the same way.
 - A plain revision is unchanged, and still means the model's one code repository. No existing
@@ -6010,6 +6017,9 @@ repository is diffed on its own, at the revision recorded for it:
   (no checkout on this machine, no revision recorded for it, an unknown revision), its paths are
   empty, and the rest are still compared. Nothing is fetched.
 - A plain recorded revision with one code repository is that repository's revision.
+- A repo id may be mapped to a directory **inside** a larger work tree (a monorepo mapped as
+  several repo ids). Its changed paths are then the ones under that directory, relative to it,
+  and its commits behind HEAD count only commits that touched it.
 
 | Flag | Effect |
 |---|---|

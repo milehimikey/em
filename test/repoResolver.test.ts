@@ -27,6 +27,9 @@ describe("parseRepoArgs", () => {
     const r = parseRepoArgs(["web=../web", "checkout-svc=/abs/co=1", "../code"], none);
     expect(r).toEqual({ ok: true, byId: new Map([["web", "../web"], ["checkout-svc", "/abs/co=1"]]), bare: "../code" });
   });
+  it("a repeated bare path: the last one wins, as a repeated single-valued option does", () => {
+    expect(parseRepoArgs(["a", "b"], none)).toEqual({ ok: true, byId: new Map(), bare: "b" });
+  });
   it("a value that is an existing path is bare even with = in it; so is one whose prefix is not a repo id", () => {
     expect(parseRepoArgs(["a=b"], (p) => p === "a=b")).toEqual({ ok: true, byId: new Map(), bare: "a=b" });
     expect(parseRepoArgs(["../x=y"], none)).toEqual({ ok: true, byId: new Map(), bare: "../x=y" });
@@ -35,7 +38,6 @@ describe("parseRepoArgs", () => {
     [["web="], "give a path after `web=`"],
     [["self=../x"], "`self` is the model's own repository"],
     [["web=a", "web=b"], 'repo "web" is given twice'],
-    [["a", "b"], "only one bare path is allowed"],
   ])("refuses %j", (values, message) => {
     const r = parseRepoArgs(values, none);
     expect(r.ok).toBe(false);

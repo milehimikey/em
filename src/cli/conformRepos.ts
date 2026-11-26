@@ -83,12 +83,16 @@ export function compareRepos(plan: Extract<RepoConformancePlan, { mode: "multi" 
     if (revision === null) return failed(`no revision is recorded for repo "${repo}" — it joined the model's code after the last conformance run; a full run records one`);
     const changed = changedPathsSince(where.dir, revision, runGit);
     if (!changed.ok) return failed(changed.message.replace(/^em conform-scope: /, ""));
-    const count = runGit(["-C", where.dir, "rev-list", "--count", `${revision}..HEAD`]);
+    // A place's root, and a bound file, are relative to the repo id's directory. That is normally
+    // a work tree's root. When it is a directory INSIDE a larger work tree (a monorepo mapped as
+    // several repo ids), git reports paths from that tree's root: keep only what is under this
+    // directory, relative to it, and count only the commits that touched it.
+    const prefix = changed.boundPrefix;
+    const paths = prefix === "" ? changed.paths : changed.paths.filter((p) => p.startsWith(`${prefix}/`)).map((p) => p.slice(prefix.length + 1));
+    const count = runGit(["-C", where.dir, "rev-list", "--count", `${revision}..HEAD`, ...(prefix === "" ? [] : ["--", "."])]);
     const n = count.status === 0 ? parseInt(count.stdout.trim(), 10) : NaN;
     if (Number.isNaN(n)) return failed(`git rev-list failed: ${(count.stderr || "").trim() || `unknown revision "${revision}"`}`);
-    // A place's root, and a bound file, are relative to the repository root — which is where a
-    // resolved checkout points, so no prefix applies.
-    return { repo, revision, changedPaths: changed.paths, commitsBehindHead: n, error: null };
+    return { repo, revision, changedPaths: paths, commitsBehindHead: n, error: null };
   });
 }
 

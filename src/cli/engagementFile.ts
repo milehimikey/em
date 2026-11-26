@@ -108,13 +108,19 @@ function formatContextList(paths: string[]): string {
   return `[${paths.map((p) => JSON.stringify(p)).join(", ")}]`;
 }
 
+/** A repo id as a YAML flow scalar: bare when YAML reads it back as the same string, quoted when
+ *  it would be read as something else (`null`, `true`, `1e3`, `0x1F`, a leading `-`…). */
+function yamlPlain(id: string): string {
+  return /^(?:null|true|false|yes|no|on|off|~)$/i.test(id) || /^[-+.0-9]/.test(id) ? JSON.stringify(id) : id;
+}
+
 /** One `slices:` entry as its single frontmatter line (no EOL). Key order is fixed. */
 export function formatSliceEntryLine(e: EngagementSliceEntry): string {
   const held = e.heldBy ? `, heldBy: ${e.heldBy}` : "";
   // GH #537: per-unit records ride on the same line, so one slice is still one splice.
   const units =
     e.units && e.units.length > 0
-      ? `, units: [${e.units.map((u) => `{repo: ${u.repo}, state: ${u.state}, branch: ${q(u.branch)}, base: ${q(u.base)}, pr: ${q(u.pr)}}`).join(", ")}]`
+      ? `, units: [${e.units.map((u) => `{repo: ${yamlPlain(u.repo)}, state: ${u.state}, branch: ${q(u.branch)}, base: ${q(u.base)}, pr: ${q(u.pr)}}`).join(", ")}]`
       : "";
   return `  - {key: ${e.key}, state: ${e.state}, branch: ${q(e.branch)}, base: ${q(e.base)}, pr: ${q(e.pr)}${held}${units}}`;
 }
@@ -275,7 +281,8 @@ export function spliceSliceEntry(text: string, entry: EngagementSliceEntry): str
   const escaped = entry.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const re = new RegExp(`^[ \\t]*- \\{key: ${escaped},[^\\r\\n]*`, "m");
   if (!re.test(inner)) return null;
-  const next = inner.replace(re, formatSliceEntryLine(entry));
+  // A replacer function: a `$&` or `$1` in a branch name or PR URL must be written literally.
+  const next = inner.replace(re, () => formatSliceEntryLine(entry));
   return text.slice(0, loc.innerStart) + next + text.slice(loc.innerEnd);
 }
 

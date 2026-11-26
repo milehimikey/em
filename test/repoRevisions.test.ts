@@ -46,6 +46,13 @@ describe("parseRevision / formatRepoRevisions / revisionFor", () => {
     expect(revisionFor("orders=2,web=1", "web")).toBe("1");
     expect(revisionFor("orders=2,web=1", "self")).toBeNull();
   });
+  it("a kinded identifier may contain =: it is neither a per-repo list nor refused (GH #261)", () => {
+    for (const v of ["build:run=42", "deploy:https://ci.example/run?id=7&x=y", "env:pr-57=a,b=c"]) {
+      expect(parseRevision(v)).toEqual({ kind: "single", revision: v });
+      expect(checkRevisionArg(v, "--at")).toEqual({ ok: true });
+      expect(validateAtRevision(v)).toEqual({ ok: true, value: v });
+    }
+  });
   it("checkRevisionArg: plain passes; a per-repo value must be well formed and in id order", () => {
     expect(checkRevisionArg("abc123", "--at")).toEqual({ ok: true });
     expect(checkRevisionArg("orders=2,web=1", "--at")).toEqual({ ok: true });

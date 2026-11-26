@@ -978,24 +978,31 @@ export function applyEngagementSet(
   // GH #537: a slice whose code is in more than one repository is recorded unit by unit, and its
   // own state follows from its units — so it can only be `merged` when every unit is.
   const repos = workUnitReposOf(input, idx, opts.key);
-  const multi = repos !== null && repos.length > 1;
+  // Recorded units make the slice a per-unit one for good, whatever the code map says today:
+  // they are never silently folded back into a one-line entry.
+  const multi = (repos !== null && repos.length > 1) || current.units !== undefined;
+  const recordedRepos = (current.units ?? []).map((u) => u.repo);
   let next: EngagementSliceEntry;
   let raiseVersion = false;
   if (opts.unit !== undefined) {
-    if (repos === null) return { ok: false, message: `--unit ${opts.unit}: the model has no code-map.yaml, so slice "${opts.key}" is one unit — drop --unit` };
-    if (!repos.includes(opts.unit)) {
+    // A unit recorded earlier stays settable after the code map moved its code elsewhere, or went away.
+    if (repos === null && !recordedRepos.includes(opts.unit)) {
+      return { ok: false, message: `--unit ${opts.unit}: the model has no code-map.yaml, so slice "${opts.key}" is one unit — drop --unit` };
+    }
+    if (repos !== null && !repos.includes(opts.unit) && !recordedRepos.includes(opts.unit)) {
       return { ok: false, message: `--unit ${opts.unit}: slice "${opts.key}" has no work unit in repo "${opts.unit}" — its units are in: ${repos.join(", ") || "(none: its elements are unplaced)"}` };
     }
   } else if (multi || current.units) {
-    const where = (current.units?.map((u) => u.repo) ?? repos ?? []).join(", ");
-    return { ok: false, message: `slice "${opts.key}" has ${multi ? repos!.length : current.units!.length} work units (${where}) — record each with --unit <repo>; the slice's state follows from them` };
+    const names = current.units?.map((u) => u.repo) ?? repos ?? [];
+    return { ok: false, message: `slice "${opts.key}" has ${names.length} work units (${names.join(", ")}) — record each with --unit <repo>; the slice's state follows from them` };
   }
   if (opts.unit !== undefined && multi) {
     const recorded = new Map((current.units ?? []).map((u) => [u.repo, u]));
     // Every unit the code map gives the slice has a record; one the map no longer gives it is kept.
+    const now = repos ?? [];
     const units: EngagementUnitEntry[] = [
-      ...repos!.map((r) => recorded.get(r) ?? { repo: r, state: "planned" as LedgerState, branch: null, base: null, pr: null }),
-      ...(current.units ?? []).filter((u) => !repos!.includes(u.repo)),
+      ...now.map((r) => recorded.get(r) ?? { repo: r, state: "planned" as LedgerState, branch: null, base: null, pr: null }),
+      ...(current.units ?? []).filter((u) => !now.includes(u.repo)),
     ];
     const i = units.findIndex((u) => u.repo === opts.unit);
     const before = units[i];
@@ -1004,7 +1011,10 @@ export function applyEngagementSet(
     if (before.state === "merged" && !unchanged) return { ok: false, message: `unit "${opts.key}@${opts.unit}" is merged — merged is terminal` };
     if (unchanged) return { ok: true, changed: false, text, entry: current };
     units[i] = after;
-    const state = deriveSliceState(units);
+    // The slice follows the units the code map gives it TODAY. A record for a repo the map no
+    // longer places the slice in is kept as history, but cannot hold the slice back.
+    const live = units.filter((u) => now.includes(u.repo));
+    const state = deriveSliceState(live.length > 0 ? live : units);
     next = { key: current.key, state, branch: current.branch, base: current.base, pr: current.pr, units };
     if (state === "held") next.heldBy = "human";
     raiseVersion = true;
@@ -1020,7 +1030,8 @@ export function applyEngagementSet(
     if (opts.state === "held") next.heldBy = "human";
   }
   const same = formatSliceEntryLine(next) === formatSliceEntryLine(current);
-  if (current.state === "merged" && !same) return { ok: false, message: `slice "${opts.key}" is merged — merged is terminal` };
+  // Per unit, `merged` is terminal on the unit (checked above); the slice's own state is derived.
+  if (current.state === "merged" && !same && next.units === undefined) return { ok: false, message: `slice "${opts.key}" is merged — merged is terminal` };
   if (same) return { ok: true, changed: false, text, entry: current };
   const spliced = spliceSliceEntry(text, next);
   if (spliced === null) return { ok: false, message: `slice "${opts.key}"'s slices entry is not on one line — the file was hand-edited; restore the one-line entry shape` };

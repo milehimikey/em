@@ -101,6 +101,11 @@ its own branch and pull request. The Ledger records each one, on the slice's own
   and raises the file's `engagementSchemaVersion` to `"1.4"`.
 - **A slice with one unit has no `units:`** and its entry is exactly what it always was, whether
   or not the model has a code map. A file with no such slice is never raised to 1.4.
+- **Once recorded, units stay.** If the code map later moves the slice's code, a record for a
+  repository the map no longer gives it is kept and can still be set by name, but the slice's
+  state follows the units the map gives it today. A slice with recorded units is never folded
+  back into a one-line entry, and a `merged` unit stays `merged`.
+- A repo id YAML would read as something else (`null`, `1e3`) is written quoted.
 - The Ledger table shows one row per unit under its slice, `↳ <key>@<repo>`.
 - **One writer.** Only `em engagement set`, run in the model's repository, writes these records.
   An implementer working in a code repository never touches the engagement file: it reports back,
