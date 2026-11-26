@@ -4837,6 +4837,39 @@ an unrelated slice's breakage elsewhere in a large, still-WIP model doesn't bloc
 em slice mark-implemented model.em request-payment https://github.com/org/repo/pull/42
 ```
 
+### `--unit <repo>`: a slice shipped as several pull requests
+
+Since 1.24.0 (GH #539). A slice whose code is in more than one repository
+([code-map-schema.md](code-map-schema.md)) ships as one pull request per **work unit**, the
+slice's code in one repository. Each is recorded on its own, and the doc flips when every unit
+has one:
+
+```bash
+em slice mark-implemented model.em place-order https://github.com/acme/storefront-web/pull/12 --unit storefront-web
+# recorded: place-order@storefront-web (…) — 1 of 2 units; slices/place-order.md stays ready-to-implement until checkout-svc is recorded
+em slice mark-implemented model.em place-order https://github.com/acme/checkout-svc/pull/31 --unit checkout-svc
+# marked implemented: slices/place-order.md (…)
+```
+
+- `--unit` names the unit by repo id, as the plan's `units[].repo` does.
+- **Until the last unit is recorded** the doc keeps `status: ready-to-implement`, no shipped
+  record is written, and `implementedIn:` holds the list so far. A slice is never recorded as
+  shipped on half its code.
+- **`implementedIn:` then holds one link per unit**, as `<repo>=<url>` pairs, comma-separated,
+  no spaces, in repo-id order:
+  `implementedIn: checkout-svc=https://…/pull/31,storefront-web=https://…/pull/12`. A URL may
+  not contain a comma or whitespace.
+- The same URL for a unit is a no-op; a different URL for a unit already recorded is refused,
+  the rule a single link has always had.
+- **For a slice with two or more units a URL without `--unit` is refused** and the message
+  names the units. For a slice with one unit, `--unit` is accepted and the doc is written
+  exactly as without it. With no code map there are no units and `--unit` is refused.
+- `--json` adds `unit` (`<key>@<repo>`), `complete` and `waiting` (the repos not yet recorded),
+  and `implementedIn` is the list.
+
+This is the last thing a slice's **closing step** does: once every unit's pull request has
+merged, record them and commit the doc on a branch of the model's repository.
+
 ## `em slice revise <file> <slice-key>`
 
 Opens the **next version of a slice doc as a real `draft`** (MIL-283, 1.15.0) — the successor of

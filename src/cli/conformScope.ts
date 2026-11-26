@@ -92,7 +92,8 @@ const SCP_LIKE = /^[\w.-]+@[\w.-]+:/; // git@host:owner/repo.git style — also 
  *  information we can trust. Deliberately conservative — see this module's header comment. */
 function pathCandidate(implementedIn: string): string | null {
   const trimmed = implementedIn.trim();
-  if (!trimmed || URL_LIKE.test(trimmed) || SCP_LIKE.test(trimmed)) return null;
+  // GH #539: `<repo>=<url>,…` — one pull request per work unit — is links too, not a path.
+  if (!trimmed || URL_LIKE.test(trimmed) || SCP_LIKE.test(trimmed) || trimmed.includes("://")) return null;
   return trimmed.replace(/^\.\//, "").replace(/\/+$/, "");
 }
 
