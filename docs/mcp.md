@@ -109,7 +109,7 @@ working directory — the same working-directory convention every `em` CLI comma
 | `metrics` | `{ file, from, to? }` (git — see below) | The `em metrics <file> --from <rev> --json` document: ratification turnaround, conform cadence + findings, status-vs-reality disagreement, computed from git history over the range |
 | `discover_triage_check` | `{ path, source? }` | The `em discover triage-check <path> --json` document: validates a `discovery/prd-triage.json` PRD/spec triage record (GH #295) |
 | `conform_findings_check` | `{ path }` | The `em conform-findings check <path> --json` document: shape-validates a `conformance/<date>-findings.json` file (MIL-214; `em slice conform` also reads `<date>-<name>-findings.json`) |
-| `conform_bindings_check` | `{ file, repo, slice? }` | The `em conform bindings check <file> --repo <repo> [--slice <key>] --json` document (GH #449): verifies each `conformance/bindings/<slice-key>.yaml` against the compiled model and the target repo. Read-only; advisory only |
+| `conform_bindings_check` | `{ file, repo?, repos?, slice? }` | The `em conform bindings check <file> --repo <repo> [--slice <key>] --json` document (GH #449): verifies each `conformance/bindings/<slice-key>.yaml` against the compiled model and the target repo. Read-only; advisory only |
 | `model_version_show` | `{ file }` | The `em model version show <file> --json` document: the model's design version and most recently certified version (MIL-218) — reads only `model-versions/*.json`, never compiles the model |
 | `upgrade` | `{ file }` (git — see below) | The `em upgrade <file> --json` document (MIL-219): dry-run only, never applies anything |
 | `contract` | *(none)* | The packaged implementation contract (`reference/implement.md`), same as `em contract` |
@@ -370,7 +370,9 @@ Same document as `em conform bindings check <file> --repo <repo> [--slice <key>]
 #449): verifies each per-slice bindings manifest (`conformance/bindings/<slice-key>.yaml`, see
 [bindings.md](bindings.md)) — every bound element's `ref` resolves against the compiled model,
 and every bound `file`/`identifier` exists/is found under `repo` (plain substring, never
-code-parsed — language-agnostic). Refuses (tool error) when `file` has validation errors, or
+code-parsed — language-agnostic). `repo` is optional (default: the model's own repository), and
+`repos` takes `<id>=<path>` entries for bindings that span repositories, exactly as the CLI's
+repeatable `--repo` does (GH #532). Refuses (tool error) when `file` has validation errors, or
 `slice` doesn't resolve to a slice in the model. Read-only and advisory only: never wired into
 `validate`/`slice_ready`, and (unlike the CLI's `--exit-code`) this tool never fails on a binding
 problem — the document's own `ok` field carries that. See

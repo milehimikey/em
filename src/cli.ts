@@ -161,6 +161,7 @@ import {
 import { checkPrdTriage, buildCheckPrdTriageJson, renderPrdTriageMarkdown, validatePrdTriage } from "./cli/prdTriage.js";
 import { checkFindingsFile, buildCheckFindingsJson, FindingLocus, FINDING_LOCI } from "./cli/findings.js";
 import { runBindingsCheck, buildBindingsCheckJson, renderBindingsCheckText } from "./cli/bindings.js";
+import { buildBindingRepos } from "./cli/bindingRepos.js";
 import {
   STATE_FILE_NAME,
   PHASES,
@@ -2425,11 +2426,16 @@ conformBindings
       "--reachable-from`).",
   )
   .argument("<file>", "input .em file")
-  .requiredOption("--repo <path>", "path to the target codebase (bound `file`s resolve relative to it; never required to be a git repository)")
+  .option(
+    "--repo <path|id=path>",
+    "where bound `file`s are looked for (repeatable). A bare <path> is the target codebase, as before; <id>=<path> maps one repo id to a checkout when the bindings span repositories. Default: the model's own repository, and for other repo ids .em/repos.local.yaml, then a sibling directory named after the id. Never required to be a git repository",
+    (value: string, previous: string[]) => [...previous, value],
+    [] as string[],
+  )
   .option("--slice <key>", "check only this slice's bindings file (default: every conformance/bindings/*.yaml)")
   .option("--json", "print a JSON document instead of the text report")
   .option("--exit-code", "exit 1 if any binding failed (git-diff convention) — the opt-in CI gate")
-  .action((file: string, opts: { repo: string; slice?: string; json?: boolean; exitCode?: boolean }) => {
+  .action((file: string, opts: { repo: string[]; slice?: string; json?: boolean; exitCode?: boolean }) => {
     const { model, diagnostics, refs } = compileFile(file);
     printDiagnostics(diagnostics);
     if (hasErrors(diagnostics)) {
@@ -2437,7 +2443,12 @@ conformBindings
       process.exit(1);
     }
     const sliceKey = opts.slice !== undefined ? resolveSliceOrExit("em conform bindings check", model, refs, opts.slice) : undefined;
-    const result = runBindingsCheck(refs, dirname(file), opts.repo, sliceKey);
+    const where = buildBindingRepos({ modelFile: file, model, refs, repoValues: opts.repo, sliceKey });
+    if (!where.ok) {
+      console.error(`em conform bindings check: ${where.message}`);
+      process.exit(1);
+    }
+    const result = runBindingsCheck(refs, dirname(file), where.repos, sliceKey);
     if (opts.json) {
       console.log(buildBindingsCheckJson(result));
     } else {

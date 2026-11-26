@@ -138,7 +138,10 @@ Verifies, deterministically, for every binding:
 - `slice:` matches a real slice in the compiled model (an orphaned file naming a renamed/removed
   slice is its own failure kind, `unknown-slice`).
 - Every `elements[].ref` resolves against that slice's own element refs in the model.
-- Every bound `file` exists under `--repo`, and contains its `identifier` as a substring.
+- Every bound `file` exists under `--repo`, and contains its `identifier` as a substring. When
+  the bindings span repositories, each file is looked for in the checkout of its own repo
+  ([cli.md](cli.md#em-conform-bindings-check-file---repo-path)); a repo with no checkout on the
+  machine fails its bindings with that reason and is never fetched.
 
 Never does, by design:
 - **No code parsing.** `identifier` is matched as a plain substring — it doesn't confirm the

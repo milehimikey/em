@@ -286,12 +286,36 @@ function describeKey(node: unknown): string {
 
 // ---- `em conform bindings check` ----------------------------------------------------------
 
-export const BINDINGS_CHECK_SCHEMA_VERSION = "1.0";
+// 1.0 (GH #449): initial shape.
+// 1.1 (GH #532): when bindings are checked across repositories — the model has a code map, a
+// bindings file names a `repo:`, or `--repo <id>=<path>` was given — every element and every
+// invariant site gains `repo` (the repo id its file was looked for in, or null when the binding
+// names none and the slice's code is in several) and `repoResolved` (false when that repo has no
+// checkout here, or is unknown; the file is then not looked for). Both keys are absent in the
+// single-repository case, whose document is byte-identical to 1.0's apart from this version.
+export const BINDINGS_CHECK_SCHEMA_VERSION = "1.1";
+
+/** GH #532: where each repo id is on this machine, for a check that spans repositories. Built by
+ *  the caller (cli/bindingRepos.ts) from the code map and the repo resolver; this module only
+ *  asks. */
+export interface BindingRepos {
+  /** The checkout of a repo id, or why there is none to look in. */
+  dirOf(repo: string): { dir: string } | { problem: string };
+  /** The repo a binding with no `repo:` lives in, for this slice: the slice's one repository,
+   *  or the list of candidates when its code is in several. */
+  defaultRepo(sliceKey: string): string | string[];
+}
 
 export interface SiteCheck extends BindingSite {
   fileExists: boolean;
   identifierFound: boolean;
   ok: boolean;
+  /** GH #532, multi-repository checks only: why the site's repo could not be looked in. `null`
+   *  when it could. Absent (with `repo`) on a single-repository check. */
+  repoProblem?: string | null;
+  /** The repo id the file was looked for in; `null` when the binding names none and the slice's
+   *  code is in several repositories. Overrides `BindingSite.repo`'s "as written" meaning here. */
+  resolvedRepo?: string | null;
 }
 
 export interface ElementCheck {
@@ -306,6 +330,9 @@ export interface ElementCheck {
   fileExists: boolean | null;
   identifierFound: boolean | null;
   ok: boolean;
+  /** GH #532: see `SiteCheck`. */
+  repoProblem?: string | null;
+  resolvedRepo?: string | null;
 }
 
 export interface InvariantCheck {
@@ -389,6 +416,25 @@ export function boundFilesForSlice(modelDir: string, sliceKey: string): string[]
   return [...files];
 }
 
+/** GH #532: every repo id the bindings files of `sliceKeys` name explicitly (`repo:` on an
+ *  element or an invariant site). Unreadable or malformed files name none. */
+export function explicitBindingRepos(modelDir: string, sliceKeys: readonly string[]): Set<string> {
+  const out = new Set<string>();
+  for (const key of sliceKeys) {
+    let text: string;
+    try {
+      text = readFileSync(join(modelDir, bindingsFilePath(key)), "utf8");
+    } catch {
+      continue;
+    }
+    const parsed = parseBindingsFile(text, key);
+    if (!parsed.ok) continue;
+    for (const el of parsed.doc.elements) if (el.repo !== undefined) out.add(el.repo);
+    for (const inv of parsed.doc.invariants) for (const site of [inv.enforcedIn, inv.testedIn]) if (site.repo !== undefined) out.add(site.repo);
+  }
+  return out;
+}
+
 /** The bare `<kind>.<slug>` refs (no `<sliceKey>/` prefix) the compiled model actually declares
  *  for `sliceKey` — what a bindings file's `elements[].ref` is checked against. */
 function elementRefsForSlice(refs: RefsResult, sliceKey: string): Set<string> {
@@ -402,7 +448,24 @@ function elementRefsForSlice(refs: RefsResult, sliceKey: string): Set<string> {
 
 /** Grep-level only: does `file` (resolved under `repoDir`) exist, and does it contain
  *  `identifier` as a plain substring. Never parses code, never cares about language. */
-function checkSite(repoDir: string, site: BindingSite): SiteCheck {
+function checkSite(repos: string | BindingRepos, sliceKey: string, site: BindingSite): SiteCheck {
+  let repoDir: string;
+  let repoFacts: { resolvedRepo: string | null; repoProblem: string | null } | undefined;
+  if (typeof repos === "string") {
+    repoDir = repos;
+  } else {
+    const fallback = site.repo === undefined ? repos.defaultRepo(sliceKey) : site.repo;
+    if (Array.isArray(fallback)) {
+      const problem = `names no repo, and the slice's code is in several (${fallback.join(", ")}) — add \`repo:\` to the binding`;
+      return { file: site.file, identifier: site.identifier, fileExists: false, identifierFound: false, ok: false, resolvedRepo: null, repoProblem: problem };
+    }
+    const where = repos.dirOf(fallback);
+    if ("problem" in where) {
+      return { file: site.file, identifier: site.identifier, fileExists: false, identifierFound: false, ok: false, resolvedRepo: fallback, repoProblem: where.problem };
+    }
+    repoDir = where.dir;
+    repoFacts = { resolvedRepo: fallback, repoProblem: null };
+  }
   const absPath = join(repoDir, site.file);
   let fileExists = false;
   try {
@@ -418,14 +481,14 @@ function checkSite(repoDir: string, site: BindingSite): SiteCheck {
       identifierFound = false;
     }
   }
-  return { file: site.file, identifier: site.identifier, fileExists, identifierFound, ok: fileExists && identifierFound };
+  return { file: site.file, identifier: site.identifier, fileExists, identifierFound, ok: fileExists && identifierFound, ...(repoFacts ?? {}) };
 }
 
-function checkElement(repoDir: string, el: BindingElement, validRefs: ReadonlySet<string>): ElementCheck {
+function checkElement(repos: string | BindingRepos, sliceKey: string, el: BindingElement, validRefs: ReadonlySet<string>): ElementCheck {
   if (!validRefs.has(el.ref)) {
     return { ref: el.ref, file: el.file, identifier: el.identifier, note: el.note, knownRef: false, fileExists: null, identifierFound: null, ok: false };
   }
-  const site = checkSite(repoDir, el);
+  const site = checkSite(repos, sliceKey, el);
   return {
     ref: el.ref,
     file: el.file,
@@ -435,16 +498,17 @@ function checkElement(repoDir: string, el: BindingElement, validRefs: ReadonlySe
     fileExists: site.fileExists,
     identifierFound: site.identifierFound,
     ok: site.ok,
+    ...(site.resolvedRepo === undefined ? {} : { resolvedRepo: site.resolvedRepo, repoProblem: site.repoProblem ?? null }),
   };
 }
 
-function checkInvariant(repoDir: string, inv: BindingInvariant): InvariantCheck {
-  const enforcedIn = checkSite(repoDir, inv.enforcedIn);
-  const testedIn = checkSite(repoDir, inv.testedIn);
+function checkInvariant(repos: string | BindingRepos, sliceKey: string, inv: BindingInvariant): InvariantCheck {
+  const enforcedIn = checkSite(repos, sliceKey, inv.enforcedIn);
+  const testedIn = checkSite(repos, sliceKey, inv.testedIn);
   return { id: inv.id, enforcedIn, testedIn, ok: enforcedIn.ok && testedIn.ok };
 }
 
-function checkOneBindingsFile(refs: RefsResult, modelDir: string, repoDir: string, sliceKey: string): BindingsFileResult {
+function checkOneBindingsFile(refs: RefsResult, modelDir: string, repoDir: string | BindingRepos, sliceKey: string): BindingsFileResult {
   const path = bindingsFilePath(sliceKey);
   const absPath = join(modelDir, path);
   if (!existsSync(absPath)) {
@@ -464,8 +528,8 @@ function checkOneBindingsFile(refs: RefsResult, modelDir: string, repoDir: strin
     return { path, slice: parsed.doc.slice, kind: "unknown-slice", ok: false, errors: [`slice "${parsed.doc.slice}" is not in the model`], elements: [], invariants: [] };
   }
   const validRefs = elementRefsForSlice(refs, parsed.doc.slice);
-  const elements = parsed.doc.elements.map((el) => checkElement(repoDir, el, validRefs));
-  const invariants = parsed.doc.invariants.map((inv) => checkInvariant(repoDir, inv));
+  const elements = parsed.doc.elements.map((el) => checkElement(repoDir, parsed.doc.slice, el, validRefs));
+  const invariants = parsed.doc.invariants.map((inv) => checkInvariant(repoDir, parsed.doc.slice, inv));
   const ok = elements.every((e) => e.ok) && invariants.every((i) => i.ok);
   return { path, slice: parsed.doc.slice, kind: "checked", ok, errors: [], elements, invariants };
 }
@@ -505,7 +569,7 @@ function summarize(files: BindingsFileResult[]): BindingsCheckSummary {
  * convention every doc/note/conformance path in `em` uses); `repoDir` is `--repo`, resolved as
  * given (never required to be a git repository — this check never shells out to git).
  */
-export function runBindingsCheck(refs: RefsResult, modelDir: string, repoDir: string, sliceKey?: string): BindingsCheckRunResult {
+export function runBindingsCheck(refs: RefsResult, modelDir: string, repoDir: string | BindingRepos, sliceKey?: string): BindingsCheckRunResult {
   const sliceKeys = sliceKey !== undefined ? [sliceKey] : listBindingsSliceKeys(modelDir);
   const files = sliceKeys.map((key) => checkOneBindingsFile(refs, modelDir, repoDir, key));
   return { ok: files.every((f) => f.ok), slice: sliceKey ?? null, files, summary: summarize(files) };
@@ -533,6 +597,7 @@ export function buildBindingsCheckJson(result: BindingsCheckRunResult): string {
         fileExists: e.fileExists,
         identifierFound: e.identifierFound,
         ok: e.ok,
+        ...repoJson(e),
       })),
       invariants: f.invariants.map((i) => ({
         id: i.id,
@@ -542,6 +607,7 @@ export function buildBindingsCheckJson(result: BindingsCheckRunResult): string {
           fileExists: i.enforcedIn.fileExists,
           identifierFound: i.enforcedIn.identifierFound,
           ok: i.enforcedIn.ok,
+          ...repoJson(i.enforcedIn),
         },
         testedIn: {
           file: i.testedIn.file,
@@ -549,6 +615,7 @@ export function buildBindingsCheckJson(result: BindingsCheckRunResult): string {
           fileExists: i.testedIn.fileExists,
           identifierFound: i.testedIn.identifierFound,
           ok: i.testedIn.ok,
+          ...repoJson(i.testedIn),
         },
         ok: i.ok,
       })),
@@ -558,12 +625,23 @@ export function buildBindingsCheckJson(result: BindingsCheckRunResult): string {
   return JSON.stringify(doc, null, 2);
 }
 
+/** GH #532: the two repo keys of a multi-repository check; nothing on a single-repository one. */
+function repoJson(c: { resolvedRepo?: string | null; repoProblem?: string | null }): { repo?: string | null; repoResolved?: boolean } {
+  return c.resolvedRepo === undefined ? {} : { repo: c.resolvedRepo, repoResolved: (c.repoProblem ?? null) === null };
+}
+
+/** `<repo>:<file>` on a multi-repository check, the bare file otherwise. */
+function siteLabel(c: { file: string; resolvedRepo?: string | null }): string {
+  return c.resolvedRepo === undefined || c.resolvedRepo === null ? c.file : `${c.resolvedRepo}:${c.file}`;
+}
+
 /** The reason a single element/invariant-site check failed, for the text report — `null` on a
  *  pass. Checked in the same order the checker itself short-circuits. Takes the two flags rather
  *  than a `SiteCheck` so it also reads an `ElementCheck` with `knownRef: true` (whose
  *  `fileExists`/`identifierFound` are booleans in practice, `boolean | null` only in the type —
  *  never called on a `knownRef: false` element, which has its own "unknown ref" message). */
-function siteFailureReason(flags: { fileExists: boolean | null; identifierFound: boolean | null }): string | null {
+function siteFailureReason(flags: { fileExists: boolean | null; identifierFound: boolean | null; repoProblem?: string | null }): string | null {
+  if (flags.repoProblem) return flags.repoProblem;
   if (!flags.fileExists) return "file not found";
   if (!flags.identifierFound) return "identifier not found";
   return null;
@@ -601,7 +679,7 @@ export function renderBindingsCheckText(result: BindingsCheckRunResult): string 
         continue;
       }
       const reason = siteFailureReason(e);
-      lines.push(`  [${e.ok ? "ok" : "FAIL"}] ${e.ref} -> ${e.file} ("${e.identifier}")${reason ? ` — ${reason}` : ""}`);
+      lines.push(`  [${e.ok ? "ok" : "FAIL"}] ${e.ref} -> ${siteLabel(e)} ("${e.identifier}")${reason ? ` — ${reason}` : ""}`);
     }
     for (const i of f.invariants) {
       for (const [label, site] of [
@@ -609,7 +687,7 @@ export function renderBindingsCheckText(result: BindingsCheckRunResult): string 
         ["tested", i.testedIn],
       ] as const) {
         const reason = siteFailureReason(site);
-        lines.push(`  [${site.ok ? "ok" : "FAIL"}] ${i.id} ${label}: ${site.file} ("${site.identifier}")${reason ? ` — ${reason}` : ""}`);
+        lines.push(`  [${site.ok ? "ok" : "FAIL"}] ${i.id} ${label}: ${siteLabel(site)} ("${site.identifier}")${reason ? ` — ${reason}` : ""}`);
       }
     }
   }

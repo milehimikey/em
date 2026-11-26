@@ -98,7 +98,7 @@ describe("em conform bindings check (CLI)", () => {
     const r = em(["conform", "bindings", "check", "model.em", "--repo", repo, "--json"], cwd);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.bindingsCheckSchemaVersion).toBe("1.0");
+    expect(doc.bindingsCheckSchemaVersion).toBe("1.1");
     expect(doc.ok).toBe(true);
   });
 
