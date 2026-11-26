@@ -977,6 +977,12 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `both-ends-of-a-flow/reaction-no-command` | warning | Reaction with no command | Add the command it triggers, in this slice, or an explicit arrow to one. |
 | `both-ends-of-a-flow/ui-unbacked` | warning | `ui` with no read model or command | Add a `view` it displays, or the command it triggers. |
 | `both-ends-of-a-flow/view-unconsumed` | warning | Read model with no consumer | Add a `ui` or reaction that consumes it, or drop this instance. |
+| `code-map-element-unplaced` | error | Element has no place | Add the element under `elements:` in `code-map.yaml`, map its persona or context, or give the map a `default:`. |
+| `code-map-invalid` | error | Code map invalid | Fix `code-map.yaml`: `codeMapSchemaVersion: "1.0"` and at least one of `default`, `personas`, `contexts`, `elements`, each entry a `{ repo, root }` place (docs/code-map-schema.md). |
+| `code-map-unknown-context` | error | Code map names an unknown context | Use a context the model declares, spelled as in the model, or remove the entry. |
+| `code-map-unknown-element` | error | Code map override names a missing element | Key the override by the element's export ref (`<slice-key>/<kind>.<slug>`, as `em refs` prints it), or remove it. |
+| `code-map-unknown-persona` | error | Code map names an unknown persona | Use a persona the model declares, spelled as in the model, or remove the entry. |
+| `code-map-unknown-repo` | error | Code map names an undeclared repo | Declare the repo under `repos:` in `system.yaml` (`systemSchemaVersion: "2.1"`), or use `self` for the model's own repository. |
 | `code-spans-seam` | warning | Code change spans a seam | Keep one code module per model and change the two sides of a seam in separate change sets. |
 | `command-repeated-across-slices` | warning | Command repeated across slices | Merge the slices: one command with several outcomes is one slice — `event A | B @Context`. |
 | `command-second-intent` | warning | Command carries a second intent | Split the conditional rule set into its own command; both commands may record the same event (a bare repeat of the event is legal). |

@@ -47,6 +47,7 @@ import { validateFrontmatterCoherence } from "../catalog/frontmatterCoherenceVal
 import { validateNoteBindings } from "../catalog/noteBindingValidate.js";
 import { validateDocModelConsistency } from "../catalog/docModelConsistencyValidate.js";
 import { validateOrphanedSliceDocs } from "../catalog/orphanedSliceDocValidate.js";
+import { validateCodeMap } from "../codemap/codeMapValidate.js";
 import { validateModelVersionStale } from "../catalog/modelVersionValidate.js";
 import { validateInvariants } from "../catalog/invariantsValidate.js";
 import { loadRoster } from "../roster/roster.js";
@@ -220,6 +221,7 @@ function compileWithValidation(file: string): (CompiledSource & { allDiagnostics
     ...validateOrphanedSliceDocs(model, refs, baseDir),
     ...validateModelVersionStale(model, refs, baseDir, compiled.source),
     ...validateInvariants(model, refs, baseDir),
+    ...validateCodeMap(model, refs, file),
   ];
   return { ...compiled, allDiagnostics };
 }

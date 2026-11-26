@@ -163,6 +163,7 @@ my-project/
       checkout.svg
       README.md
       .event-modeling.md       # state file; `- **Code roots:** services/checkout`
+      code-map.yaml            # optional: where this model's code lives, when not all here (code-map-schema.md)
       slices/
         add-item.md
         checkout.md            # <- this model's own "Checkout" slice
@@ -435,10 +436,12 @@ current tree — see [validation.md#lineage](validation.md#lineage)), frontmatte
 [validation.md#frontmatter-coherence](validation.md#frontmatter-coherence) for exactly what's
 checked, and, just as deliberately, what's never flagged — a re-ratified slice's stale
 `implementedIn` is expected, not incoherent), note-binding mismatches (MIL-126), doc↔model
-consistency (MIL-124), orphaned slice docs (MIL-183), and model-version staleness (MIL-218,
+consistency (MIL-124), orphaned slice docs (MIL-183), model-version staleness (MIL-218,
 `model-versions/*.json` against the current model content/slice-version vector — see
 [validation.md#model-version-stale](validation.md#model-version-stale); silent when no manifest
-exists at all).
+exists at all), and the code map (GH #527, `code-map.yaml` beside the model against the model
+and the `repos:` of the governing `system.yaml` — see
+[validation.md#code-map](validation.md#code-map); silent when the model has no code map).
 
 | Flag | Effect |
 |---|---|

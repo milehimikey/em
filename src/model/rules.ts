@@ -795,6 +795,50 @@ export const RULES = {
     usageCategory: "code spans seam",
     docAnchor: "seam-scope",
   },
+  // GH #527: the code map (`code-map.yaml` beside the model, codemap/codeMapValidate.ts). None can
+  // fire on a model with no code map.
+  "code-map-invalid": {
+    severity: "error",
+    title: "Code map invalid",
+    fix: "Fix `code-map.yaml`: `codeMapSchemaVersion: \"1.0\"` and at least one of `default`, `personas`, `contexts`, `elements`, each entry a `{ repo, root }` place (docs/code-map-schema.md).",
+    usageCategory: "code map invalid",
+    docAnchor: "code-map",
+  },
+  "code-map-unknown-repo": {
+    severity: "error",
+    title: "Code map names an undeclared repo",
+    fix: "Declare the repo under `repos:` in `system.yaml` (`systemSchemaVersion: \"2.1\"`), or use `self` for the model's own repository.",
+    usageCategory: "code map unknown repo",
+    docAnchor: "code-map",
+  },
+  "code-map-unknown-persona": {
+    severity: "error",
+    title: "Code map names an unknown persona",
+    fix: "Use a persona the model declares, spelled as in the model, or remove the entry.",
+    usageCategory: "code map unknown persona",
+    docAnchor: "code-map",
+  },
+  "code-map-unknown-context": {
+    severity: "error",
+    title: "Code map names an unknown context",
+    fix: "Use a context the model declares, spelled as in the model, or remove the entry.",
+    usageCategory: "code map unknown context",
+    docAnchor: "code-map",
+  },
+  "code-map-unknown-element": {
+    severity: "error",
+    title: "Code map override names a missing element",
+    fix: "Key the override by the element's export ref (`<slice-key>/<kind>.<slug>`, as `em refs` prints it), or remove it.",
+    usageCategory: "code map unknown element",
+    docAnchor: "code-map",
+  },
+  "code-map-element-unplaced": {
+    severity: "error",
+    title: "Element has no place",
+    fix: "Add the element under `elements:` in `code-map.yaml`, map its persona or context, or give the map a `default:`.",
+    usageCategory: "code map element unplaced",
+    docAnchor: "code-map",
+  },
   // MIL-218: the model-level counterpart to `em slice conform`'s per-slice certification — warns
   // when the `.em` content hash or the slice-version vector has moved since the last `em model
   // version bump` (src/catalog/modelVersionValidate.ts, modelVersion.ts's `modelVersionDrift`

@@ -143,6 +143,12 @@ affected lines written by hand.
 | alternative events without command |
 | arrow endpoint unresolved |
 | arrow points backward |
+| code map element unplaced |
+| code map invalid |
+| code map unknown context |
+| code map unknown element |
+| code map unknown persona |
+| code map unknown repo |
 | composite tag references unknown field |
 | consumer not adapted |
 | consumes unknown element |

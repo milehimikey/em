@@ -829,6 +829,25 @@ Fix: run `em model version bump --by <name>` to record the current state as a ne
 version, or let the next full `em state set-conformance --by <name>` bump and certify in one step. See [model-versions.md](model-versions.md) for the manifest shape and
 [process.md](process.md#model-versions) for when to bump.
 
+### Code map
+
+Raised by `em validate` when the model has a [`code-map.yaml`](code-map-schema.md) beside it
+(GH #527). **Silent when there is no code map**: a project whose model and code share one
+repository never sees these.
+
+| Code | Severity | Rule | Fix |
+|---|---|---|---|
+| `code-map-invalid` | error | `code-map.yaml` is not valid YAML or its shape is wrong: a missing or unsupported `codeMapSchemaVersion`, an unknown key, a place that is not `{ repo, root }`, a `root` that leaves the repository, or a map that places nothing | Fix the file ([code-map-schema.md](code-map-schema.md)) |
+| `code-map-unknown-repo` | error | A place names a repo id that is neither `self` nor declared under `repos:` in the `system.yaml` governing the model. Reported once per id | Declare the repo in `system.yaml` (`systemSchemaVersion: "2.1"`), or use `self` |
+| `code-map-unknown-persona` | error | A `personas:` key is not a persona the model declares | Spell it as the model does, or remove the entry |
+| `code-map-unknown-context` | error | A `contexts:` key is not a context the model declares | Spell it as the model does, or remove the entry |
+| `code-map-unknown-element` | error | An `elements:` key is not an element ref of the model | Key it by the export ref (`<slice-key>/<kind>.<slug>`), or remove it |
+| `code-map-element-unplaced` | error | An element has no place: no rule covers it and the map has no `default:`, or the contexts it routes by lead to different places | Add the element under `elements:`, map its persona or context, or give the map a `default:` |
+
+A diagnostic about the file itself names `code-map.yaml` at the start of its message, and its
+`line` counts in that file. `code-map-element-unplaced` points at the element's own line in the
+model and carries its ref.
+
 ### Strict public types
 
 MIL-237: a `public` element is a contract (see [dsl.md](dsl.md#strict-public-types)), so its
