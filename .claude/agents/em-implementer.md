@@ -53,6 +53,10 @@ With no tracking key, invent none.
 
 Your prompt carries the exact pull-request title (the plan's `prTitle`, resolved by the lead from the engagement's title template). Title the pull request exactly that, character for character. Do not add, drop or reformat a prefix, and do not compose a title yourself. If the prompt carries no title, stop and report it.
 
+## Join key (work units)
+
+For a work unit your prompt also carries a marker line of the form `Em-Unit: <model>:<slice-key>@<repo>`. Put that line in the pull request body, on a line of its own, exactly as given. Do not reword it, wrap it in a code span, or change its case. Keep the branch name that is already checked out in your worktree: every unit of the slice uses the same branch name in its own repository, and together with the marker line that is how the slice's pull requests are found again. If the prompt names a work unit but carries no marker line, stop and report it.
+
 ## Hard lines
 
 - Never edit the slice doc, the `.em` model, another slice's package, shared infrastructure, or the engagement file.
