@@ -34,14 +34,39 @@ export const LEDGER_MARKER = "em-engagement-ledger";
 /** Same kebab grammar as a slice export key — the slug is a filename stem. */
 export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+/** GH #537: one work unit's Ledger record — one slice's code in one repository. */
+export interface EngagementUnitEntry {
+  /** The repo id the unit's work happens in (`system.yaml` `repos:`, or `self`). */
+  repo: string;
+  state: LedgerState;
+  branch: string | null;
+  base: string | null;
+  pr: string | null;
+}
+
 export interface EngagementSliceEntry {
   key: string;
+  /** With `units`, derived from them (`deriveSliceState`) each time one is set. */
   state: LedgerState;
   branch: string | null;
   base: string | null;
   pr: string | null;
   /** R23: present (always `"human"`) only while `state` is `held` via `em engagement set`. */
   heldBy?: "human";
+  /** GH #537 (file schema 1.4): per-unit records, for a slice whose code is in more than one
+   *  repository. Absent for a one-unit slice, whose entry is what it always was. */
+  units?: EngagementUnitEntry[];
+}
+
+/** GH #537: a slice's state from its units. `merged` only when every unit is; a hold or a gap
+ *  on any unit is the slice's; otherwise the slice is as far along as its least advanced unit. */
+export function deriveSliceState(units: readonly EngagementUnitEntry[]): LedgerState {
+  if (units.length === 0) return "planned";
+  if (units.every((u) => u.state === "merged")) return "merged";
+  if (units.some((u) => u.state === "held")) return "held";
+  if (units.some((u) => u.state === "gap")) return "gap";
+  const order: LedgerState[] = ["planned", "building", "validating", "review", "awaiting-merge", "merged"];
+  return order[Math.min(...units.map((u) => order.indexOf(u.state)))];
 }
 
 export interface EngagementFile {
@@ -86,7 +111,12 @@ function formatContextList(paths: string[]): string {
 /** One `slices:` entry as its single frontmatter line (no EOL). Key order is fixed. */
 export function formatSliceEntryLine(e: EngagementSliceEntry): string {
   const held = e.heldBy ? `, heldBy: ${e.heldBy}` : "";
-  return `  - {key: ${e.key}, state: ${e.state}, branch: ${q(e.branch)}, base: ${q(e.base)}, pr: ${q(e.pr)}${held}}`;
+  // GH #537: per-unit records ride on the same line, so one slice is still one splice.
+  const units =
+    e.units && e.units.length > 0
+      ? `, units: [${e.units.map((u) => `{repo: ${u.repo}, state: ${u.state}, branch: ${q(u.branch)}, base: ${q(u.base)}, pr: ${q(u.pr)}}`).join(", ")}]`
+      : "";
+  return `  - {key: ${e.key}, state: ${e.state}, branch: ${q(e.branch)}, base: ${q(e.base)}, pr: ${q(e.pr)}${held}${units}}`;
 }
 
 /** Escape a markdown table cell (backslash first, then `|`, newlines flattened) — the same rule
@@ -113,6 +143,10 @@ export function buildLedgerLines(slices: EngagementSliceEntry[], facts: Map<stri
     lines.push(
       `| \`${e.key}\` | ${cell(f?.pattern ?? null)} | ${cell(f?.docStatus ?? null)} | ${state} | ${cell(e.branch)} | ${cell(e.base)} | ${cell(e.pr)} |`,
     );
+    // GH #537: one row per work unit under its slice.
+    for (const u of e.units ?? []) {
+      lines.push(`| ↳ \`${e.key}@${u.repo}\` |  |  | ${u.state} | ${cell(u.branch)} | ${cell(u.base)} | ${cell(u.pr)} |`);
+    }
   }
   return lines;
 }
@@ -197,6 +231,21 @@ export function parseEngagementFile(text: string): ParseResult {
     if (!state || !isLedgerState(state)) return { ok: false, message: `slice "${key}" has an unknown state "${state ?? "(missing)"}"` };
     const entry: EngagementSliceEntry = { key, state, branch: str(r.branch), base: str(r.base), pr: str(r.pr) };
     if (r.heldBy === "human") entry.heldBy = "human";
+    if (r.units !== undefined && r.units !== null) {
+      if (!Array.isArray(r.units)) return { ok: false, message: `slice "${key}": units must be a list` };
+      const units: EngagementUnitEntry[] = [];
+      for (const rawUnit of r.units) {
+        if (!rawUnit || typeof rawUnit !== "object") return { ok: false, message: `slice "${key}": every units entry must be a mapping` };
+        const u = rawUnit as Record<string, unknown>;
+        const repo = str(u.repo);
+        const unitState = str(u.state);
+        if (!repo) return { ok: false, message: `slice "${key}": a units entry has no repo` };
+        if (!unitState || !isLedgerState(unitState)) return { ok: false, message: `slice "${key}", unit "${repo}": unknown state "${unitState ?? "(missing)"}"` };
+        if (units.some((x) => x.repo === repo)) return { ok: false, message: `slice "${key}": unit "${repo}" is listed twice` };
+        units.push({ repo, state: unitState, branch: str(u.branch), base: str(u.base), pr: str(u.pr) });
+      }
+      if (units.length > 0) entry.units = units;
+    }
     slices.push(entry);
   }
   return {
@@ -227,6 +276,24 @@ export function spliceSliceEntry(text: string, entry: EngagementSliceEntry): str
   const re = new RegExp(`^[ \\t]*- \\{key: ${escaped},[^\\r\\n]*`, "m");
   if (!re.test(inner)) return null;
   const next = inner.replace(re, formatSliceEntryLine(entry));
+  return text.slice(0, loc.innerStart) + next + text.slice(loc.innerEnd);
+}
+
+/** GH #537: raise the frontmatter's `engagementSchemaVersion` to `version` when it is lower — the
+ *  one-time step the first per-unit record takes. Unchanged when already there; null when the
+ *  line is not found. */
+export function spliceSchemaVersion(text: string, version: string): string | null {
+  const loc = locateFrontmatterInner(text);
+  if (!loc) return null;
+  const inner = text.slice(loc.innerStart, loc.innerEnd);
+  const re = fieldLineRegex("engagementSchemaVersion");
+  const m = re.exec(inner);
+  if (!m) return null;
+  const current = m[0].slice(m[1].length).trim().replace(/^"|"$/g, "");
+  const older = current.split(".").map(Number);
+  const wanted = version.split(".").map(Number);
+  if (older[0] > wanted[0] || (older[0] === wanted[0] && older[1] >= wanted[1])) return text;
+  const next = inner.replace(re, (_m, prefix: string) => `${prefix}"${version}"`);
   return text.slice(0, loc.innerStart) + next + text.slice(loc.innerEnd);
 }
 

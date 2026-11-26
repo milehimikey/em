@@ -61,6 +61,12 @@ export interface EngagementPlanUnit {
   marker: string;
   /** Ids of the nodes this one waits for. */
   dependsOn: string[];
+  /** GH #537: where the node stands. A work unit's Ledger state (its own record, or the slice's
+   *  when the slice is one unit); a closing step is `merged` once the slice doc records the
+   *  slice as shipped, `planned` until then. Set by the plan, not by `deriveUnits`. */
+  state?: string;
+  /** GH #537: the unit's recorded pull request URL; `null` when none, and for a closing step. */
+  pr?: string | null;
 }
 
 export interface UnitSliceInput {

@@ -17,7 +17,7 @@ const em = (args: string[], cwd: string) => {
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 };
 
-type Unit = { id: string; kind: string; partOf: string; repo: string; roots: string[]; elements: string[]; level: number; branch: string; base: string; prTitle: string; marker: string; dependsOn: string[] };
+type Unit = { state: string; pr: string | null; id: string; kind: string; partOf: string; repo: string; roots: string[]; elements: string[]; level: number; branch: string; base: string; prTitle: string; marker: string; dependsOn: string[] };
 
 describe("the unit graph in em engagement plan (GH #536)", () => {
   let p: MultiRepoProject;
@@ -59,6 +59,8 @@ describe("the unit graph in em engagement plan (GH #536)", () => {
         marker: "Em-Unit: shop:place-order@web",
         // `Order Placed` is public: there is a contract, so the two build in parallel.
         dependsOn: [],
+        state: "planned",
+        pr: null,
       },
       {
         id: "place-order@orders",
@@ -73,6 +75,8 @@ describe("the unit graph in em engagement plan (GH #536)", () => {
         prTitle: "Place Order",
         marker: "Em-Unit: shop:place-order@orders",
         dependsOn: [],
+        state: "planned",
+        pr: null,
       },
       {
         id: "close:place-order",
@@ -87,6 +91,8 @@ describe("the unit graph in em engagement plan (GH #536)", () => {
         prTitle: "Place Order [close]",
         marker: "Em-Unit: shop:place-order@close",
         dependsOn: ["place-order@web", "place-order@orders"],
+        state: "planned",
+        pr: null,
       },
     ]);
     // The slices array is untouched: one Ledger row per slice.

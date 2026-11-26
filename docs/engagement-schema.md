@@ -1,4 +1,4 @@
-# Engagement file schema (`engagementSchemaVersion` 1.3; 1.2 is written with no `context`, 1.1 with neither `context` nor `prTitle`)
+# Engagement file schema (`engagementSchemaVersion` 1.4; 1.3 is a file with no per-unit records, 1.2 one with no `context`, 1.1 one with neither `context` nor `prTitle`)
 
 An engagement file is `<model dir>/engagements/<slug>.md`, beside the model (MIL-268). It holds
 one engagement: the slices a lead session builds, one PR per slice against `main`, and the
@@ -51,7 +51,7 @@ never hand-edit the frontmatter `slices:` entries or the Ledger table (see docs/
 
 | Key | Type | Meaning |
 |---|---|---|
-| `engagementSchemaVersion` | string, `"1.3"` | This contract's version. `new` writes `"1.3"` only when `context` is present, `"1.2"` when `prTitle` is present but `context` is not, else `"1.1"`; a `"1.0"`, `"1.1"`, `"1.2"` or `"1.3"` file reads. Any other value is refused. |
+| `engagementSchemaVersion` | string, `"1.4"` | This contract's version. `new` writes `"1.3"` only when `context` is present, `"1.2"` when `prTitle` is present but `context` is not, else `"1.1"`; `set --unit` raises it to `"1.4"` the first time it records a work unit (GH #537). A `"1.0"`, `"1.1"`, `"1.2"`, `"1.3"` or `"1.4"` file reads. Any other value is refused. |
 | `slug` | kebab-case string | The engagement's name; also the file name stem. |
 | `model` | string | The model file this engagement belongs to, as a `/`-separated path relative to the engagement file (`../lending.em`). `new` writes it. `plan`, `set`, `status` and `close` refuse a `<model>.em` argument that does not resolve to it (`em engagement <verb>: engagements/<slug>.md belongs to <model>, not <arg>`). `em status` counts an engagement only for its own model, so several models can share one directory. |
 | `created` | `YYYY-MM-DD` | The local date `new` ran. This is the only date in the file. |
@@ -74,6 +74,38 @@ are double-quoted, so a URL or a branch name containing `:` stays valid YAML.
 | `base` | string or `null` | The branch the PR targets, as recorded: `main` for every slice since 1.15.0 (MIL-280 — slice PRs never stack). A file written by em ≤ 1.14.2 may still record `impl/<upstream>`; `plan` reports `main` regardless. |
 | `pr` | string or `null` | The PR URL. |
 | `heldBy` | `human` (optional) | Present only while `state` is `held` through `em engagement set --state held`. |
+| `units` | list (optional, schema 1.4) | One record per **work unit** of a slice whose code is in more than one repository. See below. Absent for every other slice. |
+
+### `units`: a slice in more than one repository (schema 1.4)
+
+When the model has a [`code-map.yaml`](code-map-schema.md) and a slice's code is in two or more
+repositories, the slice is built as that many **work units** (slice × repository), each with
+its own branch and pull request. The Ledger records each one, on the slice's own line:
+
+```yaml
+  - {key: place-order, state: review, branch: null, base: null, pr: null, units: [{repo: storefront-web, state: merged, branch: "impl/place-order", base: "main", pr: "https://github.com/acme/storefront-web/pull/12"}, {repo: checkout-svc, state: review, branch: "impl/place-order", base: "main", pr: "https://github.com/acme/checkout-svc/pull/31"}]}
+```
+
+| Key | Type | Meaning |
+|---|---|---|
+| `repo` | repo id | The repository the unit's work happens in (`system.yaml`'s `repos:`, or `self`). With the slice key it is the unit's id, `<key>@<repo>`. |
+| `state` | a Ledger state | This unit's state. `merged` is terminal per unit. |
+| `branch`, `base`, `pr` | string or `null` | As on a slice entry, for this unit. |
+
+- **The slice's own `state` is derived from its units** every time one is set, and is never set
+  directly: `merged` only when every unit is `merged`; `held` or `gap` when any unit is; otherwise
+  the state of its least advanced unit. So a slice in two repositories is `merged` only when both
+  halves are. Its own `branch`, `base` and `pr` stay as they were.
+- `em engagement set <file> <slug> <key> --unit <repo> --state …` records one unit. The first
+  such write adds a record for every unit the code map gives the slice (the others `planned`)
+  and raises the file's `engagementSchemaVersion` to `"1.4"`.
+- **A slice with one unit has no `units:`** and its entry is exactly what it always was, whether
+  or not the model has a code map. A file with no such slice is never raised to 1.4.
+- The Ledger table shows one row per unit under its slice, `↳ <key>@<repo>`.
+- **One writer.** Only `em engagement set`, run in the model's repository, writes these records.
+  An implementer working in a code repository never touches the engagement file: it reports back,
+  and the lead or the harness records the result. PR state is stored here, not read from the
+  forge.
 
 `merged` is also *inferred*, without being written, for a slice the Ledger still records as
 `planned` whose doc records a shipped version. `plan` and `status` report that as
@@ -96,10 +128,10 @@ or a link to the plan.
 ## Versioning
 
 `engagementSchemaVersion` is versioned independently of the npm package and of the two JSON
-documents (`engagementPlanSchemaVersion` `"1.7"` and `engagementStatusSchemaVersion` `"1.1"`). An
+documents (`engagementPlanSchemaVersion` `"1.7"` and `engagementStatusSchemaVersion` `"1.2"`). An
 additive key bumps the minor version (`tracking` took all three from 1.0 to 1.1; `prTitle` took
 the file to 1.2 and the plan document to 1.4; `context` took the file to 1.3 and the plan document
-to 1.5; `ratifyAtHandoff` took the plan document to 1.6, GH #492; the unit graph `units` took it to 1.7, GH #536). `new` writes the lowest version that still covers what was actually given — `"1.1"` when
+to 1.5; `ratifyAtHandoff` took the plan document to 1.6, GH #492; the unit graph `units` took it to 1.7, GH #536; per-unit Ledger records took the file to 1.4 and the status document to 1.2, GH #537). `new` writes the lowest version that still covers what was actually given — `"1.1"` when
 neither `--pr-title` nor `--context-doc` is given, `"1.2"` when `--pr-title` is given but not
 `--context-doc`, `"1.3"` when `--context-doc` is given (regardless of `--pr-title`) — so a file
 that does not use a feature stays readable by an em pinned to the version before that feature

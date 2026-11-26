@@ -633,7 +633,7 @@ describe("engagement tracking key (GH #241)", () => {
     const p = JSON.parse(em(["engagement", "plan", "lifecycles.em", "cli", "--json"], dir).stdout);
     expect(p).toMatchObject({ engagementPlanSchemaVersion: "1.7", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
     const s = JSON.parse(em(["engagement", "status", "lifecycles.em", "cli", "--json"], dir).stdout);
-    expect(s).toMatchObject({ engagementStatusSchemaVersion: "1.1", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
+    expect(s).toMatchObject({ engagementStatusSchemaVersion: "1.2", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
   }, 60_000);
 });
 
