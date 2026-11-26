@@ -1101,8 +1101,8 @@ root.
 
 | Key | Meaning |
 |---|---|
-| `element.places` | Where the element lives. One place from any code-map rule; `[]` when the map does not place it (`em validate` reports `code-map-element-unplaced`) |
-| `element.placedBy` | The rule that placed it: `"element"` (an override), `"persona"`, `"context"` or `"default"`; `null` when unplaced. The routing rules are in [code-map-schema.md](code-map-schema.md#routing) |
+| `element.places` | Where the element lives. One place from any code-map rule, one per root when `Code roots:` placed it; `[]` when the map does not place it (`em validate` reports `code-map-element-unplaced`) |
+| `element.placedBy` | The rule that placed it: `"element"` (an override), `"persona"`, `"context"`, `"default"`, or `"code-roots"` (GH #530: the map has no `default:`, so the state file's `Code roots:` placed it, one place in `self` per root); `null` when unplaced. The routing rules are in [code-map-schema.md](code-map-schema.md#routing) |
 | `slice.places` | The places of that slice's elements, each once, in first-appearance order. Two entries with different `repo` mean the slice's code is in two repositories |
 | `model.places` | Every place the model uses, each once, in first-appearance order |
 

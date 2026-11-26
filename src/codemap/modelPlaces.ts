@@ -10,6 +10,7 @@ import { RefsResult } from "../model/refs.js";
 import { Diagnostic } from "../model/validate.js";
 import { CodeMap, Place, samePlace } from "./codeMap.js";
 import { loadCodeMap } from "./codeMapValidate.js";
+import { codeRootPlaces } from "./codeRoots.js";
 import { derivePlaces, ModelPlacement, slicePlaces } from "./places.js";
 
 export type ModelPlaces =
@@ -30,7 +31,8 @@ export function loadModelPlaces(modelFile: string, model: NormalizedModel, refs:
   const loaded = loadCodeMap(modelFile);
   if (loaded.kind === "none") return { kind: "none" };
   if (loaded.kind === "invalid") return { kind: "invalid", diagnostics: loaded.diagnostics };
-  const placement = derivePlaces(model, refs, loaded.map);
+  // GH #530: with no `default:` in the map, the state file's `Code roots:` are the default.
+  const placement = derivePlaces(model, refs, loaded.map, codeRootPlaces(modelFile));
   const bySlice = model.slices.map((_, i) => slicePlaces(model, refs, placement, i));
   const all: Place[] = [];
   for (const places of bySlice) for (const p of places) if (!all.some((q) => samePlace(p, q))) all.push(p);

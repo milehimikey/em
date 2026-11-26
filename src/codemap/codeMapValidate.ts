@@ -15,6 +15,7 @@ import { SELF_REPO_ID } from "../system/manifest.js";
 import { loadDeclaredRepos } from "../system/systemRepos.js";
 import { CODE_MAP_FILE, CodeMap, parseCodeMap, Place } from "./codeMap.js";
 import { derivePlaces } from "./places.js";
+import { codeRootPlaces } from "./codeRoots.js";
 
 export type LoadedCodeMap =
   /** No `code-map.yaml` beside the model, or one whose `model:` names another model file. */
@@ -54,11 +55,16 @@ function inCodeMap(d: Diagnostic): Diagnostic {
 }
 
 /**
- * Every code-map diagnostic for one model. `fallback` is the default place(s) the caller has
- * outside the map (see `derivePlaces`); with it, an element the map does not place is not
- * unplaced.
+ * Every code-map diagnostic for one model. `fallback` is the default place(s) outside the map
+ * (see `derivePlaces`) — by default the state file's `Code roots:` (GH #530), so a map with no
+ * `default:` beside a state file that declares code roots leaves nothing unplaced.
  */
-export function validateCodeMap(model: NormalizedModel, refs: RefsResult, modelFile: string, fallback: Place[] = []): Diagnostic[] {
+export function validateCodeMap(
+  model: NormalizedModel,
+  refs: RefsResult,
+  modelFile: string,
+  fallback: Place[] = codeRootPlaces(modelFile),
+): Diagnostic[] {
   const loaded = loadCodeMap(modelFile);
   if (loaded.kind === "none") return [];
   if (loaded.kind === "invalid") return loaded.diagnostics;
@@ -119,7 +125,7 @@ export function validateCodeMap(model: NormalizedModel, refs: RefsResult, modelF
     const p = placement.elements[i];
     if (p.places.length > 0) return;
     pushDiag(out, "code-map-element-unplaced", {
-      message: `${el.kind} "${el.name}" has no place: ${p.unplacedReason} — add \`${p.ref}\` under \`elements:\` in ${CODE_MAP_FILE}, or give the map a \`default:\``,
+      message: `${el.kind} "${el.name}" has no place: ${p.unplacedReason} — add \`${p.ref}\` under \`elements:\` in ${CODE_MAP_FILE}, or give the map a \`default:\` (or the state file a \`Code roots:\` bullet)`,
       line: el.line,
       refs: [p.ref],
     });

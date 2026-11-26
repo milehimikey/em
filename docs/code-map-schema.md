@@ -5,7 +5,9 @@ where the model's code lives when that is not simply "in this repository, under 
 code roots": in another repository, in several, or under different roots of one.
 
 **A project whose model and code share one repository does not need this file.** With no
-`code-map.yaml`, nothing in `em` changes.
+`code-map.yaml`, nothing in `em` changes: the state file's `Code roots:` bullet keeps saying where
+the code is, exactly as before, and `em system scope` reads it for `code-spans-seam` as it always
+has.
 
 **It is a file contract.** `em` only reads it; nothing in `em` writes it.
 
@@ -46,7 +48,7 @@ elements:
 |---|---|---|
 | `codeMapSchemaVersion` | string, `"1.0"` | Required. Any other value is refused. |
 | `model` | string (optional) | The model file this map describes, as a bare file name (`checkout.em`). Give it only when the directory holds more than one `.em` file: a map that names another model is not applied to this one, the same way a state file's `Model file:` works. Absent, the map describes every model in the directory. |
-| `default` | place (optional) | The place of every element no other rule places. |
+| `default` | place (optional) | The place of every element no other rule places. Absent, the state file's `Code roots:` are the default, in `self` (see Routing). |
 | `personas` | mapping: persona name → place (optional) | Routes `ui` elements. The name is spelled as the model declares it, without the `@`. |
 | `contexts` | mapping: context name → place (optional) | Routes everything that is not a `ui`. The name is spelled as the model declares it, without the `@`. |
 | `elements` | mapping: element export ref → place (optional) | Per-element overrides, keyed by the ref `em refs` prints (`<slice-key>/<kind>.<slug>`). |
@@ -88,7 +90,10 @@ Each element gets its place from the first rule that applies:
 
    When those contexts all route to one place, that is the element's place. A context with no
    `contexts:` entry routes to the default.
-4. **The default**: `default:`.
+4. **The default**: `default:`. When the map has none, the state file's `Code roots:` bullet is
+   the default (GH #530): each root it lists is a place in `self`. The bullet has always meant
+   "this model's code is under these paths of this repository", so a map only needs to say what
+   lives somewhere else. With several roots the element gets several places, all in `self`.
 
 A later instance of a view (`view X again`) or a bare repeat of an event is the same read model
 or the same fact, so it lives where its first instance lives, including under an override on the
@@ -133,7 +138,7 @@ a model with no `code-map.yaml`
 | `code-map-unknown-persona` | A `personas:` key is not a persona of the model |
 | `code-map-unknown-context` | A `contexts:` key is not a context of the model |
 | `code-map-unknown-element` | An `elements:` key is not an element ref of the model |
-| `code-map-element-unplaced` | An element has no place: no rule covers it and there is no `default:`, or the contexts it borrows route to different places |
+| `code-map-element-unplaced` | An element has no place: no rule covers it and there is neither a `default:` nor a `Code roots:` bullet, or the contexts it borrows route to different places |
 
 A diagnostic about the file names `code-map.yaml` at the start of its message, and its `line`
 counts in that file (the text output prints `code-map.yaml:<line>`). `code-map-element-unplaced`
