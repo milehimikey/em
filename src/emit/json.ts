@@ -236,7 +236,8 @@ export const GENERATOR_VERSION: string = JSON.parse(
 //    first-appearance order.
 //  - `slice.places: Place[]` — the places of that slice's elements, same ordering.
 //  - `element.places: Place[]` and `element.placedBy` — where the element lives and which rule
-//    placed it (`"element"` | `"persona"` | `"context"` | `"default"`), or `[]`
+//    placed it (`"element"` | `"persona"` | `"context"` | `"default"` | `"code-roots"`, the last since GH #530:
+//    the state file's `Code roots:` as the default in `self`), or `[]`
 //    and `null` for an element the map does not place (`em validate` reports it as
 //    `code-map-element-unplaced`).
 // Unlike every earlier addition these four keys are ABSENT, not null, for a model with no code

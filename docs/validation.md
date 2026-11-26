@@ -842,7 +842,7 @@ repository never sees these.
 | `code-map-unknown-persona` | error | A `personas:` key is not a persona the model declares | Spell it as the model does, or remove the entry |
 | `code-map-unknown-context` | error | A `contexts:` key is not a context the model declares | Spell it as the model does, or remove the entry |
 | `code-map-unknown-element` | error | An `elements:` key is not an element ref of the model | Key it by the export ref (`<slice-key>/<kind>.<slug>`), or remove it |
-| `code-map-element-unplaced` | error | An element has no place: no rule covers it and the map has no `default:`, or the contexts it routes by lead to different places | Add the element under `elements:`, map its persona or context, or give the map a `default:` |
+| `code-map-element-unplaced` | error | An element has no place: no rule covers it and there is neither a `default:` in the map nor a `Code roots:` bullet in the state file, or the contexts it routes by lead to different places | Add the element under `elements:`, map its persona or context, or give the map a `default:` |
 
 A diagnostic about the file itself names `code-map.yaml` at the start of its message, and its
 `line` counts in that file. `code-map-element-unplaced` points at the element's own line in the

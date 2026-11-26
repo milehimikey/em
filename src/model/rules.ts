@@ -835,7 +835,7 @@ export const RULES = {
   "code-map-element-unplaced": {
     severity: "error",
     title: "Element has no place",
-    fix: "Add the element under `elements:` in `code-map.yaml`, map its persona or context, or give the map a `default:`.",
+    fix: "Add the element under `elements:` in `code-map.yaml`, map its persona or context, or give the map a `default:` (the state file's `Code roots:` also serves as one).",
     usageCategory: "code map element unplaced",
     docAnchor: "code-map",
   },

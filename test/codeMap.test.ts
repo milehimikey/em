@@ -157,7 +157,7 @@ describe("derivePlaces", () => {
     expect(place(noDefault, "place-order/ui.checkout")).toBe('unplaced: no `personas:` entry for "Customer", and the code map has no `default:`');
     expect(place(noDefault, "place-order/event.order-placed")).toBe("unplaced: no `contexts:` entry covers it, and the code map has no `default:`");
     const fallback = [{ repo: "self", root: "src/a" }, { repo: "self", root: "src/b" }, { repo: "self", root: "src/a" }];
-    expect(place(noDefault, "place-order/ui.checkout", fallback)).toBe("self:src/a + self:src/b (fallback)");
+    expect(place(noDefault, "place-order/ui.checkout", fallback)).toBe("self:src/a + self:src/b (code-roots)");
     expect(place(noDefault, "take-payment/event.payment-taken", fallback)).toBe("payments-svc (context)");
   });
 

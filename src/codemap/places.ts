@@ -18,7 +18,8 @@
 //      When those contexts all route to one place, that is the element's place. When they route
 //      to different places, the model does not say which, and the element is left unplaced with
 //      a reason: an `elements:` override settles it. em never picks one.
-//   4. The default: the map's `default:`, else the caller's fallback places.
+//   4. The default: the map's `default:`, else the caller's fallback places — the state file's
+//      `Code roots:`, each a place in `self` (GH #530, codeRoots.ts).
 //
 // A later instance (`view X again`, a bare repeat of an event) is the same read model or the
 // same fact, so it lives where its first instance lives.
@@ -29,13 +30,13 @@ import { RefsResult } from "../model/refs.js";
 import { CodeMap, formatPlace, Place, samePlace } from "./codeMap.js";
 
 /** Which rule placed an element. `null` when nothing did. */
-export type PlacedBy = "element" | "persona" | "context" | "default" | "fallback";
+export type PlacedBy = "element" | "persona" | "context" | "default" | "code-roots";
 
 export interface ElementPlacement {
   /** The element's export ref. */
   ref: string;
-  /** Where the element lives. One place from any code-map rule; possibly several from the
-   *  caller's fallback (a state file may declare several code roots); `[]` when unplaced. */
+  /** Where the element lives. One place from any code-map rule; one per code root when the
+   *  state file's `Code roots:` placed it (it may declare several); `[]` when unplaced. */
   places: Place[];
   placedBy: PlacedBy | null;
   /** Set exactly when `places` is empty: why nothing placed it, as a sentence fragment. */
@@ -60,8 +61,8 @@ function samePlaces(a: Place[], b: Place[]): boolean {
 
 /**
  * Place every element of `model`. `fallback` is what places an element when no rule in the map
- * does and the map has no `default:` — the caller's own default (GH #530 feeds the state file's
- * `Code roots:` here); `[]` for none.
+ * does and the map has no `default:`: the state file's `Code roots:` as places
+ * (`codeRootPlaces`), reported as `placedBy: "code-roots"`; `[]` for none.
  */
 export function derivePlaces(model: NormalizedModel, refs: RefsResult, map: CodeMap, fallback: Place[] = []): ModelPlacement {
   const personaPlace = new Map(map.personas.map((r) => [r.key, r.place]));
@@ -72,7 +73,7 @@ export function derivePlaces(model: NormalizedModel, refs: RefsResult, map: Code
   const defaults: { places: Place[]; by: PlacedBy } | null = map.default
     ? { places: [map.default.place], by: "default" }
     : fallback.length > 0
-      ? { places: dedupePlaces(fallback), by: "fallback" }
+      ? { places: dedupePlaces(fallback), by: "code-roots" }
       : null;
 
   const eventContexts = (events: Element[]): string[] => {
