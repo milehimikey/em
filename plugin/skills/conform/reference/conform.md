@@ -43,11 +43,19 @@ difference is what you do with what you find: extract *builds* a model from the 
    against it. (GH #400: the ONE exception is a deliberate pre-ship advisory run — see
    `--preview` under step 5 below — not a reason to treat this precondition as optional for an
    ordinary post-ship sweep.)
-3. The codebase to check: the state file's **Existing system refs** (populated during
-   `extract`, if this model came from one) or ask the user for the repo path if not set. Record
-   it if missing. In a headless/scheduled run with no user to ask, default to the repository
-   the model lives in (if it contains the implementation) and state that assumption in the
-   report's run metadata.
+3. The codebase to check. **First ask where the model's code lives**: run
+   `em query slices <model-name>.em --json` and look for `places` on the results.
+   - **No `places`** (the model has no `code-map.yaml`): the code is in one repository. Use the
+     state file's **Existing system refs** (populated during `extract`, if this model came from
+     one) or ask the user for the repo path if not set. Record it if missing. In a
+     headless/scheduled run with no user to ask, default to the repository the model lives in
+     (if it contains the implementation) and state that assumption in the report's run metadata.
+   - **`places` present**: the code is wherever the code map says, possibly in several
+     repositories. Do not assume the model's repository. Run `em repos check <model-name>.em`
+     and read which repo ids resolve on this machine. Walk every place you can reach; for a
+     repo with no checkout, do not guess and do not clone it: check the slices and elements
+     placed elsewhere, and list the repo as not checked in the report's run metadata. See
+     "Code in several repositories" under Conventions.
 4. Confirm `em --version` works (same check as every other phase) — you'll run `em diff`. The
    phase needs `em diff --json`; if the flag errors as unknown, the installed `em` predates it
    — say so and stop rather than falling back to eyeballing the two models.
@@ -84,7 +92,8 @@ authoritative.
 
 ### 1. Scope
 
-Run `em conform-scope <model-name>.em --repo <target-repo-path>` — it mechanizes everything
+Run `em conform-scope <model-name>.em --repo <target-repo-path>` (for code in several
+repositories, no bare `--repo`: see "Code in several repositories" under Conventions) — it mechanizes everything
 about scoping that's deterministic: parsing `Last conformance:` (via the same state-file reader
 `em state read` uses), running `git diff --name-only <revision>..HEAD` in the target repo, and
 mapping each changed path to a slice two ways: the slice's bindings manifest names exactly that
@@ -438,6 +447,9 @@ End of run: update the state file's `Last conformance:` marker with
 em state set-conformance <target-repo revision> --report conformance/YYYY-MM-DD-report.md --by <name>
 ```
 
+(For code in several repositories the revision is one token, `<repo>=<rev>,…` in repo-id order —
+see "Code in several repositories" under Conventions.)
+
 Order at the end of a run: rule on every finding (`em conform-supersede --locus ... --by ...`) —
 the ruling that clears a slice's last finding certifies that slice itself — then this one
 `set-conformance` call. `--by` is only used when the design version must be bumped.
@@ -473,6 +485,40 @@ only some findings were ruled on this session, run it again later with the remai
 each call adds its own stamp rather than overwriting the last.
 
 ## Conventions
+
+### Code in several repositories
+
+A model with a `code-map.yaml` beside it has its code in **places**: a repo id plus a root path
+(`docs/code-map-schema.md`). One slice can have places in two repositories, typically a `ui` in a
+frontend repository and its command in a service's. Everything in this flow then runs per place:
+
+- **Never pass a bare `--repo <path>`** to `em conform-scope` or `em conform bindings check`
+  when the code is in more than one repository; both refuse it. With the repositories checked
+  out side by side (each directory named after its repo id) pass no `--repo` at all. Otherwise
+  map each one: `--repo <id>=<path>`, repeated, or let the user's `.em/repos.local.yaml` do it.
+  `em repos check` shows what resolves.
+- **Scope (step 1):** `em conform-scope` diffs each repository at the revision recorded for it.
+  Paths come back as `<repo>:<path>`, and `repos` lists each repository with its own changed
+  paths and an `error` when it could not be compared. A repository with an `error` contributed
+  no candidates: say so in the report, never read it as "nothing changed there".
+- **Evidence walk (step 2):** for each in-scope slice, walk **each of its places**
+  (`em export <model-name>.em --slice <key>` lists `places` on the slice and on every element).
+  Look for an element's code under its own place's root in its own repository, not across the
+  whole estate. An element with `places: []` is unplaced: report it as a model gap in the code
+  map, not as drift.
+- **Bindings:** a binding names the repository its `file` is relative to with `repo:`
+  (`bindingsSchemaVersion: "1.1"`, `docs/bindings.md`). Write `repo:` on every binding of a slice
+  whose code is in more than one repository; a slice in a single repository needs none. Keep one
+  bindings file per slice, in the model's repository.
+- **Revisions:** record one revision per repository, as one token in repo-id order:
+  `checkout-svc=4f2a9c1,storefront-web=b81d0e7`. Use that **same token** in the report's
+  `Target repo:` line, in the findings file's `revision`, for `em slice conform --at`,
+  `em conform-supersede --as-of` and `em state set-conformance`. The commands refuse a token
+  that is malformed or out of order and print the right spelling. A repository you could not
+  check keeps the revision it had: copy its entry forward from `Last conformance:` rather than
+  inventing one, and mark the run `--partial`.
+- **`shippedRef:` is not a code revision.** It is a commit of the model's repository and stays
+  single. Do not rewrite it per repository.
 
 - **Scratch model:** `<model-name>-asis.em`, written **next to** the canonical model (same
   directory as `.event-modeling.md`). Always seeded as a copy of the canonical model with only
