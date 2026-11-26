@@ -46,7 +46,7 @@ export function formatRepoRevisions(revisions: readonly RepoRevision[]): string 
  *  single revision, exactly as it always was (so `build:1234` and odd refnames pass through). */
 export function parseRevision(value: string): ParsedRevision {
   const trimmed = value.trim();
-  if (!trimmed.includes("=")) return { kind: "single", revision: trimmed };
+  if (!trimmed.includes("=") || /^[a-z][a-z0-9-]*:/.test(trimmed)) return { kind: "single", revision: trimmed };
   const revisions: RepoRevision[] = [];
   for (const part of trimmed.split(",")) {
     const eq = part.indexOf("=");
@@ -78,6 +78,9 @@ export function revisionFor(value: string, repo: string): string | null {
 export function checkRevisionArg(value: string, flag: string): { ok: true } | { ok: false; message: string } {
   const trimmed = value.trim();
   if (!trimmed.includes("=")) return { ok: true };
+  // GH #261: `<kind>:<id>` (`build:run=42`, a CI URL with a query string) is an opaque
+  // identifier, not a revision list — its id may contain anything, `=` included.
+  if (/^[a-z][a-z0-9-]*:/.test(trimmed)) return { ok: true };
   const parsed = parseRevision(trimmed);
   if (parsed.kind === "single") {
     return {

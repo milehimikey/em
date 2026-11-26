@@ -72,7 +72,7 @@ export function parseRepoArgs(values: readonly string[], exists: (path: string) 
       if (byId.has(id)) return { ok: false, message: `--repo: repo "${id}" is given twice` };
       byId.set(id, path);
     } else {
-      if (bare !== null) return { ok: false, message: "--repo: only one bare path is allowed — write the others as <id>=<path>" };
+      // A repeated bare path: the last one wins, as a repeated single-valued option always did.
       bare = value;
     }
   }

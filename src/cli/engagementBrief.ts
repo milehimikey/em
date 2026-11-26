@@ -427,7 +427,12 @@ export function engagementBriefFor(
     const sliceName = input.model.slices[idx.sliceIndexOf.get(entry.key)!].name ?? entry.key;
     const prTitle = resolvePrTitle(loaded.file.prTitle, effectiveTracking(idx.docTracking.get(entry.key) ?? null, loaded.file.tracking), sliceName, entry.key);
     const all = deriveUnits(input.model, input.refs, input.file, places, [{ key: entry.key, level: 0, branch: `impl/${entry.key}`, base: SLICE_BASE, prTitle }], elementsOf).units;
-    const work = all.filter((u) => u.kind === "unit" && (wantRepo === null || u.repo === wantRepo));
+    const everyUnit = all.filter((u) => u.kind === "unit");
+    if (everyUnit.length === 0) {
+      // Nothing to brief is not the same as nothing to do: the slice's elements are unplaced.
+      return { ok: false, message: `slice "${entry.key}" has no work unit — code-map.yaml places none of its elements; run \`em validate\` and place them` };
+    }
+    const work = everyUnit.filter((u) => wantRepo === null || u.repo === wantRepo);
     for (const unit of work) slices.push(buildSliceBrief(input, loaded.file, idx, entry, inlineContext, { unit, all }));
   }
   if (wantRepo !== null && slices.length === 0) {

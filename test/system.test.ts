@@ -141,6 +141,7 @@ describe("parseManifest: repos (schema 2.1, GH #526)", () => {
 
   it.each([
     [`repos:\n  self: {remote: "x"}\n`, 'repo id "self" is reserved'],
+    [`repos:\n  Close: {remote: "x"}\n`, 'repo id "Close" is reserved'],
     [`repos:\n  "bad id": {remote: "x"}\n`, 'repo id "bad id" must be letters'],
     [`repos:\n  -web: {remote: "x"}\n`, 'repo id "-web" must be letters'],
     [`repos:\n  web: {remote: "x"}\n  Web: {remote: "y"}\n`, 'differs from "web" only by case'],

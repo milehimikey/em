@@ -165,6 +165,35 @@ describe("conformance across repositories (GH #533)", () => {
     expect(em(["state", "set-conformance", recorded, "--report", "conformance/r.md", "--partial"], dir).status).toBe(0);
   });
 
+  it("repo ids mapped to directories inside one work tree (a monorepo): paths and commits are each directory's own", () => {
+    // <base>/mono is ONE git repository holding web/ and orders/, each mapped as a repo id.
+    const mono = join(base, "mono");
+    for (const d of ["web/src", "orders/src"]) mkdirSync(join(mono, d), { recursive: true });
+    gitInitQuiet(mono, "-b", "main");
+    writeFileSync(join(mono, "web", "src", "Checkout.tsx"), "export function CheckoutPage() {}\n");
+    writeFileSync(join(mono, "orders", "src", "Handler.kt"), "fun placeOrder() {}\n");
+    writeFileSync(join(mono, "orders", "src", "OpenOrders.kt"), "class OpenOrders\n");
+    const m0 = commit(mono, "initial");
+    expect(em(["state", "set-conformance", `orders=${m0},web=${m0}`, "--report", "conformance/r.md", "--partial"], dir).status).toBe(0);
+    writeFileSync(join(mono, "web", "src", "Checkout.tsx"), "export function CheckoutPage() { /* changed */ }\n");
+    commit(mono, "web only");
+    const flags = ["--repo", `web=${join(mono, "web")}`, "--repo", `orders=${join(mono, "orders")}`];
+    try {
+      const doc = JSON.parse(em(["conform-scope", "shop.em", ...flags], dir).stdout);
+      // Relative to each repo id's own directory, and only what is under it.
+      expect(doc.repos).toEqual([
+        { repo: "web", revision: m0, changedPaths: ["src/Checkout.tsx"], unmappedPaths: [], error: null },
+        { repo: "orders", revision: m0, changedPaths: [], unmappedPaths: [], error: null },
+      ]);
+      expect(doc.candidateSlices).toEqual([{ key: "place-order", matchedBy: "bindings", paths: ["web:src/Checkout.tsx"], file: null }]);
+      const fresh = JSON.parse(em(["freshness", "shop.em", "--json", ...flags], dir).stdout);
+      expect(fresh.repos.map((r: any) => [r.repo, r.commitsBehindHead])).toEqual([["web", 1], ["orders", 0]]);
+      expect([fresh.commitsBehindHead, fresh.slicePRsBehindHead]).toEqual([1, 1]);
+    } finally {
+      expect(em(["state", "set-conformance", recorded, "--report", "conformance/r.md", "--partial"], dir).status).toBe(0);
+    }
+  });
+
   it("a bare --repo is refused when the code is in two repositories", () => {
     const r = em(["conform-scope", "shop.em", "--repo", join(base, "orders")], dir);
     expect(r.status).toBe(1);
