@@ -406,6 +406,46 @@ that composes the ticket, the bindings file as the ticket's definition-of-done, 
 `em validate`/`em api check` on the agent's PR, the scoped conform walk after it merges, and
 certification with a kinded `conformedAt`.
 
+## A code repository: run em at the model's pin
+
+Since 1.24.0 (GH #546). When a model's code is in another repository
+([code-map-schema.md](code-map-schema.md)), that repository may want an `em` check of its own,
+most usefully the bindings check for the bindings that point into it. **There is one em pin for
+a system, and it is the model repository's `.em-version`.** A code repository does not carry a
+version of its own.
+
+`em` makes that work without configuration: a command that names a model file runs at the
+version the **model's** repository pins, whatever directory it is started from. So a code
+repository's job checks the model's repository out beside its own and names no version:
+
+```yaml
+jobs:
+  em-bindings:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: checkout-svc }                       # this repository, under its repo id
+      - uses: actions/checkout@v4
+        with: { repository: acme/storefront-model, path: storefront-model }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      # No version here: em re-runs itself at storefront-model/.em-version.
+      - run: npx -y @milehimikey/em conform bindings check storefront-model/checkout/checkout.em --exit-code
+```
+
+- The two checkouts are siblings, each in a directory named after its repo id, so the resolver's
+  sibling fallback finds `checkout-svc` with no `--repo` flag
+  ([cli.md](cli.md#how-a-repo-id-resolves)).
+- A repository the job did not check out fails its own bindings with `has no checkout here`.
+  Check out the ones this job is about, or scope the check with `--slice`.
+- `em repos check storefront-model/checkout/checkout.em` in the same job prints what resolved
+  and which pin is in force.
+- **Do not write `@milehimikey/em@<version>` in a code repository's workflow, add it to its
+  `package.json`, or give it a `.em-version`.** Each is a second pin that will drift from the
+  model's. `em repos check` reports every one it finds, and fails with `--exit-code`.
+- `em ci init` does not generate this workflow; it generates the model repository's. Write this
+  job by hand.
+
 ## `em coverage` (opt-in)
 
 Same "opt-in unless you install the preset" story as `em ledger` above — `--strict` is on by
