@@ -22,6 +22,15 @@ You may be given a **work unit** (`<slice-key>@<repo>`) instead of a slice: one 
 - An extra check, 9: the pull request body contains the marker line you were given (`Em-Unit: <model>:<slice-key>@<repo>`), on a line of its own, character for character, and the pull request's head branch is the branch you were told (`gh pr view <pr> --json body,headRefName`). Either one missing or different fails the check and quotes both. If no marker was given, skip it and say so.
 - Check 4 is judged against the unit's place: the repository and roots the unit's brief names. Quote them and list any changed path outside them.
 
+## Work unit
+
+You may be given a **work unit** (`<slice-key>@<repo>`) instead of a slice: one slice's code in one repository. Then you were also given the absolute path of the model's repository, and the worktree is a checkout of the unit's repository, which may hold no model at all. Run the checks below with these differences:
+
+- `<model.em>` is the model file under the model repository's path. `<key>` is the slice key, the part of the unit id before `@`.
+- Check 2 runs without `--strict`: `em coverage <model.em> --slice <key> --tests <test dir>`, with the test directory of the unit's repository. It passes when every `INV-*` id in the implementer's test map is reported as cited. List the slice's other invariants as `left to sibling units`; the lead confirms that the units together cover them all.
+- Check 8 becomes: the pull request description carries the unit's binding entries block; every entry has `repo:` equal to the unit's repo and no `TODO`; and for each entry the `file` exists in the worktree and contains the `identifier` (a plain text search). The slice's bindings file itself is not in this repository and is not expected in this pull request.
+- Check 4 is judged against the unit's place: the repository and roots the unit's brief names. Quote them and list any changed path outside them.
+
 ## Checks
 
 Run each one and record pass or fail:
