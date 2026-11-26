@@ -54,7 +54,7 @@ describe("buildStatusJson", () => {
     const report = sampleReport();
     const doc = JSON.parse(buildStatusJson(report));
     expect(doc.statusSchemaVersion).toBe(STATUS_SCHEMA_VERSION);
-    expect(STATUS_SCHEMA_VERSION).toBe("1.13");
+    expect(STATUS_SCHEMA_VERSION).toBe("1.14");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
     expect(doc.files).toEqual(report.files);
     expect(doc.slices).toEqual(report.slices);
