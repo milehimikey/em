@@ -697,7 +697,14 @@
     // ?svg= — the chosen file is already on disk (em watch --serve writes every variant on
     // every build), so there's nothing to fetch or reload by hand.
     storylinePicker.addEventListener("change", function () {
-      if (STATIC) { location.href = storylinePicker.value; return; } // a sibling page
+      if (STATIC) {
+        // A sibling page: a bare *.html filename beside this one and nothing else — the same
+        // allowlist ?svg= gets above (no path separator, no scheme colon), so a picker value can
+        // never navigate off the folder or run as a javascript: URL.
+        const page = storylinePicker.value;
+        if (/^[^/\\:]+\.html$/.test(page)) location.assign("./" + encodeURIComponent(page));
+        return;
+      }
       location.search = "svg=" + encodeURIComponent(storylinePicker.value);
     });
     document.getElementById("zoomIn").addEventListener("click", function () { zoomStep(1.5); });

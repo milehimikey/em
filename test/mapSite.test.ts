@@ -78,6 +78,15 @@ describe("buildStaticViewerHtml()", () => {
     expect((VIEWER_HTML.match(/new EventSource\(/g) ?? []).length).toBe(1);
     expect(VIEWER_HTML.indexOf("function startLive()")).toBeLessThan(VIEWER_HTML.indexOf("new EventSource("));
   });
+
+  it("the static picker navigates only to a bare sibling .html filename", () => {
+    // Same allowlist ?svg= gets: no path separator, no scheme colon — so never off the folder,
+    // never a javascript: URL. Every page name the site writes passes it.
+    const allow = /^[^/\\:]+\.html$/;
+    expect(VIEWER_HTML).toContain(`if (${allow}.test(page)) location.assign("./" + encodeURIComponent(page));`);
+    for (const ok of ["chase.html", "borrow-a-tool.html", FULL_MODEL_PAGE]) expect(allow.test(ok)).toBe(true);
+    for (const bad of ["javascript:alert(1)", "//evil.example/x.html", "../x.html", "https://evil.example/x.html", "a.svg"]) expect(allow.test(bad)).toBe(false);
+  });
 });
 
 describe("buildMapSite()", () => {
