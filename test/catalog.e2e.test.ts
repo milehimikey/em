@@ -255,3 +255,28 @@ describe("buildCatalog with a synthesized continuation (GH #287)", () => {
     expect(existsSync(join(outDir, "model", "slices", "cancel-order--again.html"))).toBe(true);
   });
 });
+
+describe("buildCatalog — storyline folders (GH #421)", () => {
+  it("finds a slice's doc in its storyline's own folder, not only the root's slices/", async () => {
+    // The doc sits where a storyline model keeps it: <root>/<storyline>/slices/<key>.md, beside
+    // the storyline's own .em. The catalog must look there like every other doc-aware command.
+    const root = mkdtempSync(join(tmpdir(), "em-catalog-storyline-"));
+    try {
+      const file = join(root, "model.em");
+      writeFileSync(file, MODEL);
+      mkdirSync(join(root, "checkout", "slices"), { recursive: true });
+      writeFileSync(join(root, "checkout", "checkout.em"), 'storyline "Checkout"\n');
+      writeFileSync(join(root, "checkout", "slices", "place-order.md"), SLICE_DOC);
+
+      const { model, grid, dot, refs } = compile(MODEL);
+      const outDir = join(root, "out");
+      await buildCatalog([{ file, model, grid, dot, refs }], { outDir });
+
+      const page = readFileSync(join(outDir, "model", "slices", "place-order.html"), "utf8");
+      expect(page).toContain("Let customers place orders.");
+      expect(page).not.toContain("No slice doc found");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

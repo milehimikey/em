@@ -68,7 +68,8 @@ describe("live server", () => {
     const body = await (await fetch(`${base}/`)).text();
     expect(body).toContain('id="canvasLink" href="/map"');
     expect(body).toContain("‹ Storylines");
-    expect(body).toContain("canvasLink.hidden = storylineVariants.length === 0");
+    // Live, it comes and goes with the picker; only a static page (em render --map) always shows it.
+    expect(body).toContain("canvasLink.hidden = !STATIC && storylineVariants.length === 0");
   });
 
   it("sanitizes ?svg= and inlines the SVG via validate-before-swap (no <object>)", async () => {

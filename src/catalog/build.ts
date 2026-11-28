@@ -118,8 +118,10 @@ export async function buildCatalog(
       // carries a "~2" suffix no doc file will ever match, so it honestly reports "no doc"
       // instead of silently rendering the first slice's doc content on both pages.
       const docRelPath = join("slices", `${sliceKey}.md`);
-      const docPath = join(dirname(file), docRelPath);
-      const ownDoc = existsSync(docPath) ? parseSliceDoc(readFileSync(docPath, "utf8")) : null;
+      // GH #421: a storyline model's slice keeps its doc in the storyline's own folder, so the
+      // lookup goes through locateDoc like every other doc-aware command, not dirname(file) alone.
+      const docPath = locateDoc(dirname(file), `slices/${sliceKey}.md`);
+      const ownDoc = docPath ? parseSliceDoc(readFileSync(docPath, "utf8")) : null;
 
       // MIL-137: no own doc -> fall back to a sibling doc that ratifies coverage of this slice
       // (MIL-121 `covers:`). The covering doc's status/pattern act as this slice's own for the

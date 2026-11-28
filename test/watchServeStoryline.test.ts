@@ -131,7 +131,7 @@ describe("em watch --serve --storyline: the subset endpoint", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
     const html = await res.text();
     expect(html).toContain("<title>Product Catalog Storylines — storylines</title>");
-    expect((html.match(/class="frame"/g) ?? []).length).toBe(3);
+    expect((html.match(/class="frame drill"/g) ?? []).length).toBe(3);
     expect(html).toContain('new EventSource("/__events")');
 
     // Drill-down: every frame's open link is this server's viewer on a subset this server serves,
