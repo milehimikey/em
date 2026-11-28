@@ -282,7 +282,8 @@ renders.
 | `-T, --format <fmt>` | Output format (`svg`, `png`, `pdf`, …); takes precedence over the `-o` extension |
 | `--slice <name>` | Render only this slice, redrawn in its own canonical pattern shape (default out: `slices/<kebab-slug>.svg`) |
 | `--storyline <name>` | Render only this storyline (GH #277): its own slices in order, nothing from outside it (default out: `storylines/<kebab-slug>.svg`) |
-| `--map` | Render every storyline to `storylines/<kebab-slug>.svg` **and** the storyline canvas `storylines/map.html`: each storyline's real diagram in a draggable frame, the flow between storylines drawn between frames (`-o` picks the html path) |
+| `--map` | Render the storylines as a static site: the storyline canvas `storylines/map.html` (each storyline's real diagram in a draggable frame, the flow between storylines drawn between frames; `-o` picks the html path) and, beside it, each storyline's `<kebab-slug>.svg` and `<kebab-slug>.html` — the page a frame opens, where clicking a slice shows its slice doc. No server needed |
+| `--full-model` | With `--map`: also write the full model's page (`_full-model.html`) and list it in each page's picker |
 | `--emit-dot` | Print the generated Graphviz DOT instead of rendering (or write it with `-o`) |
 | `--keep-empty-lanes` | Keep the API lane even when no slice uses it |
 
@@ -316,8 +317,22 @@ remembered per model in the browser (localStorage), so a rearranged canvas survi
 connectors between frames are the storyline map `em export` carries as `model.storylineEdges`: a
 thick blue arrow for a declared `after`, a dashed amber arrow labelled with the source events for
 elements of one storyline feeding another (a `from`, an `updates from`, an `arrow` or a `loops-to`
-crossing the boundary). A frame's ↗ opens that storyline's own SVG. Refuses on a model with no
-storylines; can't be combined with `--slice`, `--storyline` or `--emit-dot`.
+crossing the boundary). Refuses on a model with no storylines; can't be combined with `--slice`,
+`--storyline` or `--emit-dot`.
+
+**The canvas is the root of a static site.** Beside `map.html`, `--map` writes one
+`<kebab-slug>.html` per storyline: the same viewer `em watch --serve` serves, with that
+storyline's diagram baked into the page. Clicking a frame on the canvas (anywhere in its diagram,
+or its **open ›**) opens that storyline's page; there, clicking any element of a slice opens that
+slice's design doc in a side panel, **Review mode** steps through the storyline's slices one at a
+time, the picker switches to another storyline and **‹ Storylines** returns to the canvas. Every
+page is self-contained — nothing is fetched, no server runs — so the folder works opened from disk,
+committed beside the model, or put on any static host (`-o site/index.html` makes the canvas a
+host's landing page). The slice docs are the ones each diagram already carries, so a page shows
+the docs as they were when it was rendered: re-run `--map` after a doc changes. The storylines are
+the site; the full timeline is left out unless `--full-model` asks for it, and then it is one more
+picker entry (`_full-model.html`), never the landing page. A storyline whose page would have the
+canvas's own filename is refused — pick another with `-o`.
 
 **Slice headers are links.** In every rendered SVG (full, `--storyline`, `--slice`, the canvas),
 a slice's header cell is wrapped in an `<a>` to its design doc (`slices/<key>.md`, relative to

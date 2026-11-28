@@ -19,6 +19,7 @@ import { resolveSliceArg, defaultSliceOut, defaultStorylineOut } from "./cli/ren
 import { buildStorylineDiagram, resolveStorylineArg } from "./render/storylineDiagram.js";
 import { StorylineFrame, buildStorylineMapHtml } from "./render/storylineMap.js";
 import { storylineMap } from "./model/storylineMap.js";
+import { FULL_MODEL_PAGE, MapSiteStoryline, buildMapSite } from "./cli/mapSite.js";
 import { embedStorylinePicker } from "./render/storylinePicker.js";
 import { liveViewUrl, resolveWatchStoryline, storylineFileFor, storylineVariants } from "./cli/watchStoryline.js";
 import { resolveSliceKey } from "./model/resolveSlice.js";
@@ -271,7 +272,7 @@ import { buildCodeownersJson } from "./emit/codeownersJson.js";
 import { verifySystem, SystemDiagnostic } from "./system/verify.js";
 import { buildSystemJson } from "./emit/systemJson.js";
 import { docDirOf } from "./model/sliceDocPath.js";
-import { docDirs } from "./catalog/docLocate.js";
+import { docDirs, locateDoc } from "./catalog/docLocate.js";
 
 /** GH #253: the trailing note `em slice defer` prints after `deferred: …` on a ratified/shipped
  *  doc — the item went into the signed body, outside `ratifiedHash`, and when the stamp was still
@@ -399,14 +400,21 @@ program
   )
   .option(
     "--map",
-    "render every storyline to storylines/<kebab-slug>.svg plus a draggable canvas of them all, " +
-      "with the flow between storylines, at storylines/map.html (-o picks the html path)",
+    "render the storylines as a static site: a draggable canvas of them all, with the flow between " +
+      "storylines, at storylines/map.html (-o picks the html path), and beside it each storyline's " +
+      "<kebab-slug>.svg and <kebab-slug>.html — the page a canvas frame opens, where clicking a slice " +
+      "shows its slice doc. No server needed",
   )
+  .option("--full-model", "with --map: also write the full model's page (_full-model.html) and list it in each page's picker")
   .option("--emit-dot", "print the generated DOT instead of rendering")
   .option("--keep-empty-lanes", "keep the API lane even when empty")
   .action(async (file: string, opts) => {
     if (opts.map && (opts.slice !== undefined || opts.storyline !== undefined || opts.emitDot)) {
       console.error("em render: --map cannot be combined with --slice, --storyline or --emit-dot");
+      process.exit(1);
+    }
+    if (opts.fullModel && !opts.map) {
+      console.error("em render: --full-model applies only with --map");
       process.exit(1);
     }
     if (opts.slice !== undefined && opts.emitDot) {
@@ -453,16 +461,29 @@ program
       const out = opts.out ?? join(dirname(file), "storylines", "map.html");
       const outDir = dirname(out);
       await mkdir(outDir, { recursive: true });
-      const frames: StorylineFrame[] = [];
+      const rendered: MapSiteStoryline[] = [];
       for (const st of storylines) {
         const sub = buildStorylineDiagram(model, st, { keepEmptyLanes: opts.keepEmptyLanes });
         const svg = composeSvg(await layoutDot(sub.dot), sub.model, sub.grid, dirname(file), outDir);
-        const slug = kebabSlug(st.name);
-        await writeRendered(svg, join(outDir, `${slug}.svg`), "svg");
-        frames.push({ name: st.name, slug, sliceCount: st.sliceIndexes.length, svg });
+        rendered.push({ name: st.name, slug: kebabSlug(st.name), sliceCount: st.sliceIndexes.length, svg });
       }
-      await writeFile(out, buildStorylineMapHtml(model, frames, storylineMap(model)), "utf8");
-      console.log(`rendered ${out} (+ ${frames.length} storyline svg${frames.length === 1 ? "" : "s"})`);
+      const site = buildMapSite({
+        model,
+        map: storylineMap(model),
+        storylines: rendered,
+        mapFile: basename(out),
+        fullModelSvg: opts.fullModel ? composeSvg(await layoutDot(dot), model, grid, dirname(file), outDir) : undefined,
+      });
+      if ("error" in site) {
+        console.error(site.error);
+        process.exit(1);
+      }
+      for (const s of rendered) await writeRendered(s.svg, join(outDir, `${s.slug}.svg`), "svg");
+      for (const [name, html] of site.files) await writeFile(join(outDir, name), html, "utf8");
+      console.log(
+        `rendered ${out} (+ ${rendered.length} storyline page${rendered.length === 1 ? "" : "s"} and svg${rendered.length === 1 ? "" : "s"}` +
+          `${opts.fullModel ? `, ${FULL_MODEL_PAGE}` : ""})`,
+      );
       return;
     }
 
@@ -5105,7 +5126,7 @@ function defaultOut(file: string, fmt: string): string {
 function warnMissingNotes(file: string, model: NormalizedModel): void {
   const base = dirname(file);
   for (const el of model.elements) {
-    if (el.note && !existsSync(resolve(base, el.note))) {
+    if (el.note && !locateDoc(base, el.note)) {
       console.warn(`  warn  note file not found for "${el.name}": ${el.note}`);
     }
   }

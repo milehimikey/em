@@ -107,6 +107,9 @@ describe("buildStorylineMapHtml()", () => {
     expect((html.match(/class="frame"/g) ?? []).length).toBe(3);
     expect(html).toContain('data-name="Chase"');
     expect(html).toContain('href="./chase.svg"');
+    // A bare diagram is not a viewer page: new tab, and no click-to-open on the frame.
+    expect(html).toContain('target="_blank"');
+    expect(html).not.toContain("click a storyline to open it");
     expect((html.match(/<svg\b/g) ?? []).length).toBeGreaterThanOrEqual(4); // 3 diagrams + the links overlay
     const data = JSON.parse(/<script id="map-data" type="application\/json">([\s\S]*?)<\/script>/.exec(html)![1]);
     expect(data.model).toBe("Shed");
@@ -127,7 +130,8 @@ describe("buildStorylineMapHtml()", () => {
       frames.push({ name: st.name, slug, sliceCount: st.sliceIndexes.length, svg, href: `/?svg=storyline-${slug}.svg` });
     }
     const html = buildStorylineMapHtml(model, frames, storylineMap(model), { live: true });
-    expect((html.match(/class="frame"/g) ?? []).length).toBe(3);
+    // A frame given a viewer href drills down: marked so a click anywhere in it opens it.
+    expect((html.match(/class="frame drill"/g) ?? []).length).toBe(3);
     // Drill-down: the frame's open link is the viewer page on that storyline's subset, same tab.
     expect(html).toContain('href="/?svg=storyline-chase.svg"');
     expect(html).not.toContain('target="_blank"');

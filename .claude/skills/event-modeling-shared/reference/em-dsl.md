@@ -23,7 +23,8 @@ em render <file> -o, --out <path>                                     # output p
 em render <file> -T, --format <fmt>                                   # output format (svg, png, pdf, ...)
 em render <file> --slice <name>                                       # render only this slice, redrawn in its own canonical pattern shape (default out: slices/<kebab-slug>.svg)
 em render <file> --storyline <name>                                   # render only this storyline: its own slices in order, nothing from outside it (default out: storylines/<kebab-slug>.svg)
-em render <file> --map                                                # render every storyline to storylines/<kebab-slug>.svg plus a draggable canvas of them all, with the flow between storylines, at storylines/map.html (-o picks the html path)
+em render <file> --map                                                # render the storylines as a static site: a draggable canvas of them all, with the flow between storylines, at storylines/map.html (-o picks the html path), and beside it each storyline's <kebab-slug>.svg and <kebab-slug>.html — the page a canvas frame opens, where clicking a slice shows its slice doc. No server needed
+em render <file> --full-model                                         # with --map: also write the full model's page (_full-model.html) and list it in each page's picker
 em render <file> --emit-dot                                           # print the generated DOT instead of rendering
 em render <file> --keep-empty-lanes                                   # keep the API lane even when empty
 em export <file>                                                      # export a versioned JSON snapshot of the normalized model

@@ -21,8 +21,10 @@ export interface StorylineFrame {
   sliceCount: number;
   /** The storyline's own rendered SVG (render/storylineDiagram.ts through composeSvg). */
   svg: string;
-  /** Where the frame's open link goes. Default `./<slug>.svg` (the file `em render --map` writes
-   *  beside the page); the live viewer passes `/?svg=<subset file>` (GH #422). */
+  /** Where the frame's open link goes. Given, it is a viewer page and opens in the same tab:
+   *  `em render --map` passes `./<slug>.html` (the static viewer page it writes beside the
+   *  canvas, src/render/staticViewer.ts), the live viewer `/?svg=<subset file>` (GH #422).
+   *  Omitted, it is the bare `./<slug>.svg`, opened in a new tab. */
   href?: string;
 }
 
@@ -70,11 +72,11 @@ export function buildStorylineMapHtml(
   const frameHtml = frames
     .map(
       (f) =>
-        `<section class="frame" data-name="${esc(f.name)}" data-slug="${esc(f.slug)}">` +
+        `<section class="frame${f.href !== undefined ? " drill" : ""}" data-name="${esc(f.name)}" data-slug="${esc(f.slug)}">` +
         `<header><span class="title">${esc(f.name)}</span><span class="meta">${f.sliceCount} slice${f.sliceCount === 1 ? "" : "s"}</span>` +
-        `<a class="open" href="${esc(f.href ?? `./${f.slug}.svg`)}"${live ? "" : ' target="_blank"'} title="${
-          live ? "open this storyline in the live viewer" : "open this storyline's diagram"
-        }">${live ? "open ›" : "↗"}</a></header>` +
+        `<a class="open" href="${esc(f.href ?? `./${f.slug}.svg`)}"${f.href !== undefined ? "" : ' target="_blank"'} title="${
+          live ? "open this storyline in the live viewer" : f.href !== undefined ? "open this storyline and its slice docs" : "open this storyline's diagram"
+        }">${f.href !== undefined ? "open ›" : "↗"}</a></header>` +
         `<div class="body">${f.svg}</div></section>`,
     )
     .join("\n");
@@ -113,6 +115,7 @@ export function buildStorylineMapHtml(
   .frame header .open { margin-left: auto; color: #1e3a8a; text-decoration: none; font-weight: 700; cursor: pointer; }
   .frame .body { flex: 1; min-height: 0; background: #fff; padding: 16px; box-sizing: border-box; }
   .frame .body svg { width: 100%; height: 100%; display: block; }
+  .frame.drill .body { cursor: pointer; }
   .frame.dragging { box-shadow: 0 6px 24px rgba(0,0,0,.25); z-index: 5; }
 </style>
 </head>
@@ -124,7 +127,7 @@ export function buildStorylineMapHtml(
     live ? `\n  <span class="live" id="live">live</span><span class="error" id="liveError" hidden></span>` : ""
   }
   <span class="hint">drag a frame's title to move it · drag the background to pan · wheel to zoom${
-    live ? " · click a storyline's “open ›” to step through it" : ""
+    frames.some((f) => f.href !== undefined) ? " · click a storyline to open it" : ""
   }</span>
 </header>
 <div id="viewport"><div id="world"><svg class="links" width="1" height="1">
@@ -251,6 +254,15 @@ ${frameHtml}
       state.pos[f.dataset.slug] = { x: drag.ox + (ev.clientX - drag.sx) / state.cam.s, y: drag.oy + (ev.clientY - drag.sy) / state.cam.s };
       applyPositions();
     });
+    // A frame that drills down opens on a click anywhere in its diagram, not just the small
+    // "open ›" — the body takes no drag, so a click there is never the end of one. A link inside
+    // the diagram (a note marker) keeps its own target.
+    if (f.classList.contains("drill")) {
+      f.querySelector(".body").addEventListener("click", (ev) => {
+        if (ev.target.closest("a")) return;
+        location.href = f.querySelector("a.open").href;
+      });
+    }
     const end = () => { if (drag && drag.f === f) { f.classList.remove("dragging"); drag = null; save(); } };
     f.addEventListener("pointerup", end); f.addEventListener("pointercancel", end);
   }

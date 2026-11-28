@@ -55,6 +55,15 @@
   which is exactly when the server has a canvas to serve. Review mode needs nothing new:
   a subset's em-slices metadata holds that storyline's slices only, so Prev/Next walk the
   chosen storyline and nothing else.
+
+  Static mode: `em render --map` writes this same page once per storyline with the diagram
+  baked in (src/render/staticViewer.ts sets window.EM_STATIC = {svg, title, mapHref, variants}
+  in a script ahead of this one). Then there is no server: the SVG comes from EM_STATIC.svg
+  instead of a fetch, no /__events stream is opened, the breadcrumb goes to EM_STATIC.mapHref
+  and the picker navigates between the sibling pages in EM_STATIC.variants ({name, file,
+  current}, `file` an .html beside this one). Everything else — camera, review mode, the doc
+  flyout — is the one code path above, so the page works opened from disk or from any static
+  host.
 -->
 <html lang="en">
 <head>
@@ -202,7 +211,7 @@
 <body>
   <header>
     <span class="dot" id="dot"></span>
-    <span>Event Model — live</span>
+    <span id="viewerTitle">Event Model — live</span>
     <button class="btn" id="reviewToggle" title="Step through one slice at a time">Review mode</button>
     <a class="btn" id="canvasLink" href="/map" title="Back to the storyline canvas" hidden>‹ Storylines</a>
     <select id="storylinePicker" title="Filter the live view to one storyline" hidden></select>
@@ -240,6 +249,9 @@
     // URI-encoded) and to display (via textContent only, never markup).
     // Spaces and unicode are fine: em watch prints whatever the output file
     // is called, and that URL has to work.
+    // Static mode (see the file comment): set by a script src/render/staticViewer.ts puts ahead
+    // of this one; null when the page is served live by em watch.
+    const STATIC = window.EM_STATIC || null;
     const svgParam = new URLSearchParams(location.search).get("svg");
     const SVG_FILE = svgParam && /^[^/\\:]+\.svg$/.test(svgParam) ? svgParam : "model.svg";
 
@@ -251,6 +263,11 @@
     const reviewToggle = document.getElementById("reviewToggle");
     const storylinePicker = document.getElementById("storylinePicker");
     const canvasLink = document.getElementById("canvasLink");
+    if (STATIC) {
+      document.getElementById("viewerTitle").textContent = STATIC.title;
+      canvasLink.href = STATIC.mapHref;
+      dot.hidden = true; // nothing to be live or stale against
+    }
     const storyboard = document.getElementById("storyboard");
     const filmstrip = document.getElementById("filmstrip");
     const prevBtn = document.getElementById("prevSlice");
@@ -401,28 +418,31 @@
     function reload() {
       const id = ++loadId; // supersedes any in-flight load and pending retry
       if (retryTimer !== null) { clearTimeout(retryTimer); retryTimer = null; }
+      if (STATIC) { loadText(id, STATIC.svg); return; }
       dot.classList.add("stale");
       fetch(encodeURIComponent(SVG_FILE) + "?t=" + Date.now(), { cache: "no-store" })
         .then(function (res) {
           if (!res.ok) throw new Error("HTTP " + res.status);
           return res.text();
         })
-        .then(function (text) {
-          if (id !== loadId) return;
-          const doc = new DOMParser().parseFromString(text, "image/svg+xml");
-          const root = doc.documentElement;
-          // Validate before touching the DOM — a truncated write mid-render or
-          // a non-SVG response must not blank the shared screen.
-          if (!root || root.localName !== "svg" || doc.querySelector("parsererror")) {
-            fail("SVG parse error");
-            return;
-          }
-          applyLoad(root);
-        })
+        .then(function (text) { loadText(id, text); })
         .catch(function (err) {
           if (id !== loadId) return;
           fail(err && err.message ? err.message : String(err));
         });
+    }
+
+    function loadText(id, text) {
+      if (id !== loadId) return;
+      const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+      const root = doc.documentElement;
+      // Validate before touching the DOM — a truncated write mid-render or
+      // a non-SVG response must not blank the shared screen.
+      if (!root || root.localName !== "svg" || doc.querySelector("parsererror")) {
+        fail("SVG parse error");
+        return;
+      }
+      applyLoad(root);
     }
 
     function applyLoad(root) {
@@ -453,7 +473,8 @@
       const storyMetaEl = document.getElementById("em-storylines");
       let storyMeta = null;
       if (storyMetaEl) { try { storyMeta = JSON.parse(storyMetaEl.textContent); } catch (err) { storyMeta = null; } }
-      storylineVariants = storyMeta || [];
+      // Static mode: the sibling pages come from the page's own config, not the SVG.
+      storylineVariants = STATIC ? (STATIC.variants || []) : (storyMeta || []);
       renderStorylinePicker();
       // The model may have changed shape (slice removed) between loads. But a
       // reload with NO metadata at all (a transient bad render) must not eject
@@ -495,11 +516,17 @@
 
       banner.hidden = true;
       retryAttempt = 0;
-      stamp.textContent = new Date().toLocaleTimeString();
+      stamp.textContent = STATIC ? (STATIC.stamp || "") : new Date().toLocaleTimeString();
       dot.classList.remove("stale");
     }
 
     function fail(msg) {
+      if (STATIC) {
+        // The diagram is baked into the page: retrying can only fail the same way.
+        bannerText.textContent = "This page's diagram didn't load — " + msg;
+        banner.hidden = false;
+        return;
+      }
       bannerText.textContent = "Couldn't load " + SVG_FILE + " — " + msg + " · retrying…";
       banner.hidden = false;
       const delay = RETRY_MS[Math.min(retryAttempt, RETRY_MS.length - 1)];
@@ -569,7 +596,8 @@
     function renderStorylinePicker() {
       storylinePicker.hidden = storylineVariants.length === 0;
       // GH #422: the breadcrumb back to the canvas comes and goes with the picker.
-      canvasLink.hidden = storylineVariants.length === 0;
+      // A static page always has its map beside it, picker or not.
+      canvasLink.hidden = !STATIC && storylineVariants.length === 0;
       storylinePicker.innerHTML = "";
       for (const v of storylineVariants) {
         const opt = document.createElement("option");
@@ -669,6 +697,7 @@
     // ?svg= — the chosen file is already on disk (em watch --serve writes every variant on
     // every build), so there's nothing to fetch or reload by hand.
     storylinePicker.addEventListener("change", function () {
+      if (STATIC) { location.href = storylinePicker.value; return; } // a sibling page
       location.search = "svg=" + encodeURIComponent(storylinePicker.value);
     });
     document.getElementById("zoomIn").addEventListener("click", function () { zoomStep(1.5); });
@@ -849,6 +878,9 @@
 
     reload();
 
+    // Static mode ends here: no server to listen to.
+    if (!STATIC) startLive();
+    function startLive() {
     const es = new EventSource("/__events");
     // onopen reloads only on REconnect (laptop sleep, server restart): pushes
     // sent in the meantime were missed. The initial connect skips it — the
@@ -873,6 +905,7 @@
       banner.hidden = false;
       dot.classList.add("stale");
     });
+    }
   </script>
 </body>
 </html>
